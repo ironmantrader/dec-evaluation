@@ -183,6 +183,7 @@ const[showAddCat,setShowAddCat]=useState(false);
 const[showAddCrit,setShowAddCrit]=useState(null);
 const[showAddLeader,setShowAddLeader]=useState(false);
 const[showAddAdmin,setShowAddAdmin]=useState(false);
+const[editEmp,setEditEmp]=useState(null);
 const[newEmp,setNewEmp]=useState({name:"",team:"",role:"",isLeader:false});
 const[newCat,setNewCat]=useState({name:"",nameEn:"",icon:"📋"});
 const[newCrit,setNewCrit]=useState({name:"",nameEn:"",desc:""});
@@ -207,6 +208,7 @@ const pendingEvals=useMemo(()=>visEmps.filter(emp=>!getEvalQ(emp.id,curQ,curY)),
 // CRUD
 const addEmployee=async()=>{const team=newEmp.team||selTeam?.id||"";if(!newEmp.name.trim()||!team)return;setSaving(true);await fbPush("employees",{id:uid(),name:newEmp.name.trim(),team,role:newEmp.role.trim(),isLeader:newEmp.isLeader,createdAt:Date.now()});setNewEmp({name:"",team:"",role:"",isLeader:false});setShowAddEmp(false);setSaving(false);};
 const removeEmployee=async emp=>{if(!confirm("ลบพนักงานคนนี้?"))return;await fbRemove("employees/"+emp._key);evaluations.filter(e=>e.employeeId===emp.id).forEach(ev=>fbRemove("evaluations/"+ev._key));};
+const editEmployee=async()=>{if(!editEmp||!editEmp.name.trim())return;setSaving(true);await fbSet("employees/"+editEmp._key,{id:editEmp.id,name:editEmp.name.trim(),team:editEmp.team,role:editEmp.role.trim(),isLeader:editEmp.isLeader,createdAt:editEmp.createdAt});setEditEmp(null);setSaving(false);};
 const startEval=emp=>{setEvalTarget(emp);setEvalScores({});setEvalNote("");setView("evaluate");setSidebarOpen(false);};
 const submitEval=async()=>{if(!evalTarget)return;setSaving(true);await fbPush("evaluations",{id:uid(),employeeId:evalTarget.id,scores:{...evalScores},note:evalNote,quarter:curQ,year:curY,date:Date.now(),evaluatedBy:user.email});setSaving(false);setView("team");};
 const addCategory=async()=>{if(!newCat.name.trim())return;setSaving(true);await fbSet("categories",[...cats,{id:uid(),name:newCat.name.trim(),nameEn:newCat.nameEn.trim(),icon:newCat.icon||"📋",criteria:[]}]);setNewCat({name:"",nameEn:"",icon:"📋"});setShowAddCat(false);setSaving(false);};
@@ -303,6 +305,7 @@ return(<div key={emp._key} className="emp-row" style={{...S.card,display:"flex",
 <button onClick={()=>{setViewResult(emp);setView("results");}} style={S.btnO("#A855F7")}>ดูผล</button>
 {!done&&<button onClick={()=>startEval(emp)} style={S.btn(selTeam.color)}>ประเมิน</button>}
 {done&&<button onClick={()=>startEval(emp)} style={S.btnO(selTeam.color)}>ประเมินซ้ำ</button>}
+{isAdmin&&<button onClick={()=>setEditEmp({...emp})} style={S.btnO("#5B8DEF")}>✏️ แก้ไข</button>}
 {isAdmin&&<button onClick={()=>removeEmployee(emp)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>}
 </div></div>);})}
 </div>)}
@@ -447,6 +450,15 @@ return(<div key={key} style={{...S.card,display:"flex",alignItems:"center",justi
 <div><label style={S.label}>ชื่อเกณฑ์ (English)</label><input style={S.input} value={newCrit.nameEn} onChange={e=>setNewCrit({...newCrit,nameEn:e.target.value})} placeholder="e.g. Presentation Skills"/></div>
 <div><label style={S.label}>คำอธิบาย</label><input style={S.input} value={newCrit.desc} onChange={e=>setNewCrit({...newCrit,desc:e.target.value})} placeholder="รายละเอียด"/></div>
 <button onClick={addCriteria} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มเกณฑ์"}</button></div></Modal>
+
+<Modal open={!!editEmp} onClose={()=>setEditEmp(null)} title="แก้ไขข้อมูลพนักงาน">{editEmp&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>ชื่อ-นามสกุล</label><input style={S.input} value={editEmp.name} onChange={e=>setEditEmp({...editEmp,name:e.target.value})} placeholder="ชื่อพนักงาน"/></div>
+<div><label style={S.label}>ตำแหน่ง</label><input style={S.input} value={editEmp.role||""} onChange={e=>setEditEmp({...editEmp,role:e.target.value})} placeholder="ตำแหน่งงาน"/></div>
+<div><label style={S.label}>ทีม</label><select style={S.input} value={editEmp.team} onChange={e=>setEditEmp({...editEmp,team:e.target.value})}>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+<label style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" checked={editEmp.isLeader||false} onChange={e=>setEditEmp({...editEmp,isLeader:e.target.checked})}/><span style={{fontSize:12,color:"#c0c4d0"}}>เป็นหัวหน้างาน</span></label>
+<div style={{background:"#5B8DEF10",border:"1px solid #5B8DEF30",borderRadius:10,padding:12,fontSize:11,color:"#5B8DEF",lineHeight:1.5}}>💡 คะแนนประเมินที่ให้ไปแล้วจะไม่หายหรือเปลี่ยนแปลง แก้ไขได้เฉพาะข้อมูลพนักงาน</div>
+<button onClick={editEmployee} disabled={saving} style={{...S.btn("#5B8DEF"),marginTop:4}}>{saving?"กำลังบันทึก...":"บันทึกการแก้ไข"}</button>
+</div>}</Modal>
 
 </div>);}
 
