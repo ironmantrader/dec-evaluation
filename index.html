@@ -22,15 +22,9 @@
   button:active { transform: scale(0.97); }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-  /* Mobile sidebar overlay */
-  .sidebar-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
-    z-index: 19; backdrop-filter: blur(3px);
-  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+  .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 19; backdrop-filter: blur(3px); }
   .sidebar-overlay.open { display: block; }
-
-  /* Responsive */
   @media (max-width: 768px) {
     .desktop-sidebar { transform: translateX(-100%); transition: transform .25s ease; z-index: 20 !important; }
     .desktop-sidebar.open { transform: translateX(0); }
@@ -49,9 +43,28 @@
 <body>
 <div id="root"></div>
 
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
+<!-- React -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+
+<script>
+// ─── Firebase Init ───
+firebase.initializeApp({
+  apiKey: "AIzaSyAPtQpVk-_kyCb245COTeHxKDABaEWI9HE",
+  authDomain: "dec-evaluation.firebaseapp.com",
+  databaseURL: "https://dec-evaluation-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "dec-evaluation",
+  storageBucket: "dec-evaluation.firebasestorage.app",
+  messagingSenderId: "314975458735",
+  appId: "1:314975458735:web:246d118fa5845f29aecb5a"
+});
+window.db = firebase.database();
+</script>
 
 <script type="text/babel">
 const { useState, useEffect } = React;
@@ -112,19 +125,28 @@ const SCORE_LABELS = [
 ];
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+const db = window.db;
 
-// LocalStorage helpers
-function loadLS(key, fallback) {
-  try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : fallback; } catch { return fallback; }
+// ─── Firebase real-time hook ───
+function useFirebase(path, fallback) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const ref = db.ref(path);
+    const handler = ref.on("value", snap => {
+      setData(snap.val() ?? fallback);
+      setLoading(false);
+    });
+    return () => ref.off("value", handler);
+  }, [path]);
+  return [data, loading];
 }
-function saveLS(key, data) {
-  try { localStorage.setItem(key, JSON.stringify(data)); } catch(e) { console.error(e); }
-}
 
-const KEYS = { employees: "dec-emp", evaluations: "dec-eval", categories: "dec-cat" };
+function fbSet(path, data) { return db.ref(path).set(data); }
+function fbPush(path, data) { return db.ref(path).push(data); }
+function fbRemove(path) { return db.ref(path).remove(); }
 
-// ─── Sub-components ───
-
+// ─── Small components ───
 function ScoreInput({ value, onChange }) {
   return (
     <div style={{ display: "flex", gap: 5 }}>
@@ -152,7 +174,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 999, background: "rgba(0,0,0,.55)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#13161c", border: "1px solid #2a2d35", borderRadius: 16, padding: "24px 24px", maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,.5)" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#13161c", border: "1px solid #2a2d35", borderRadius: 16, padding: "24px", maxWidth: 480, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 64px rgba(0,0,0,.5)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <h3 style={{ margin: 0, fontSize: 17, color: "#f0f0f0" }}>{title}</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 22, cursor: "pointer" }}>✕</button>
@@ -165,9 +187,27 @@ function Modal({ open, onClose, title, children }) {
 
 // ─── MAIN APP ───
 function App() {
-  const [employees, setEmployees] = useState(() => loadLS(KEYS.employees, []));
-  const [evaluations, setEvaluations] = useState(() => loadLS(KEYS.evaluations, []));
-  const [categories, setCategories] = useState(() => loadLS(KEYS.categories, DEFAULT_CATEGORIES));
+  const [empObj, empLoading] = useFirebase("employees", {});
+  const [evalObj, evalLoading] = useFirebase("evaluations", {});
+  const [catData, catLoading] = useFirebase("categories", null);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    const ref = db.ref(".info/connected");
+    const h = ref.on("value", s => setConnected(!!s.val()));
+    return () => ref.off("value", h);
+  }, []);
+
+  // Init categories on first use
+  useEffect(() => {
+    if (!catLoading && catData === null) fbSet("categories", DEFAULT_CATEGORIES);
+  }, [catLoading, catData]);
+
+  const employees = empObj ? Object.entries(empObj).map(([k, v]) => ({ ...v, _key: k })) : [];
+  const evaluations = evalObj ? Object.entries(evalObj).map(([k, v]) => ({ ...v, _key: k })) : [];
+  const catsArray = catData ? (Array.isArray(catData) ? catData : Object.values(catData)) : DEFAULT_CATEGORIES;
+  const loading = empLoading || evalLoading || catLoading;
+
   const [view, setView] = useState("dashboard");
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [evalTarget, setEvalTarget] = useState(null);
@@ -181,177 +221,163 @@ function App() {
   const [newCrit, setNewCrit] = useState({ name: "", nameEn: "", desc: "" });
   const [evalScores, setEvalScores] = useState({});
   const [evalNote, setEvalNote] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const saveEmp = d => { setEmployees(d); saveLS(KEYS.employees, d); };
-  const saveEval = d => { setEvaluations(d); saveLS(KEYS.evaluations, d); };
-  const saveCat = d => { setCategories(d); saveLS(KEYS.categories, d); };
+  const nav = (v, t = null) => { setView(v); setSelectedTeam(t); setSidebarOpen(false); };
 
-  const navigate = (v, team = null) => { setView(v); setSelectedTeam(team); setSidebarOpen(false); };
-
-  const addEmployee = () => {
-    const team = newEmp.team || (selectedTeam ? selectedTeam.id : "");
+  const addEmployee = async () => {
+    const team = newEmp.team || selectedTeam?.id || "";
     if (!newEmp.name.trim() || !team) return;
-    saveEmp([...employees, { id: uid(), name: newEmp.name.trim(), team, role: newEmp.role.trim(), isLeader: newEmp.isLeader, createdAt: Date.now() }]);
-    setNewEmp({ name: "", team: "", role: "", isLeader: false }); setShowAddEmp(false);
+    setSaving(true);
+    await fbPush("employees", { id: uid(), name: newEmp.name.trim(), team, role: newEmp.role.trim(), isLeader: newEmp.isLeader, createdAt: Date.now() });
+    setNewEmp({ name: "", team: "", role: "", isLeader: false }); setShowAddEmp(false); setSaving(false);
   };
 
-  const removeEmployee = id => { saveEmp(employees.filter(e => e.id !== id)); saveEval(evaluations.filter(e => e.employeeId !== id)); };
+  const removeEmployee = async emp => {
+    if (!confirm("ลบพนักงานคนนี้?")) return;
+    setSaving(true);
+    await fbRemove(`employees/${emp._key}`);
+    evaluations.filter(e => e.employeeId === emp.id).forEach(ev => fbRemove(`evaluations/${ev._key}`));
+    setSaving(false);
+  };
 
   const startEval = emp => { setEvalTarget(emp); setEvalScores({}); setEvalNote(""); setView("evaluate"); setSidebarOpen(false); };
 
-  const submitEval = () => {
+  const submitEval = async () => {
     if (!evalTarget) return;
-    saveEval([...evaluations, { id: uid(), employeeId: evalTarget.id, scores: { ...evalScores }, note: evalNote, date: Date.now() }]);
-    setView("team");
+    setSaving(true);
+    await fbPush("evaluations", { id: uid(), employeeId: evalTarget.id, scores: { ...evalScores }, note: evalNote, date: Date.now() });
+    setSaving(false); setView("team");
   };
 
-  const addCategory = () => {
+  const addCategory = async () => {
     if (!newCat.name.trim()) return;
-    saveCat([...categories, { id: uid(), name: newCat.name.trim(), nameEn: newCat.nameEn.trim(), icon: newCat.icon || "📋", criteria: [] }]);
-    setNewCat({ name: "", nameEn: "", icon: "📋" }); setShowAddCat(false);
+    setSaving(true);
+    await fbSet("categories", [...catsArray, { id: uid(), name: newCat.name.trim(), nameEn: newCat.nameEn.trim(), icon: newCat.icon || "📋", criteria: [] }]);
+    setNewCat({ name: "", nameEn: "", icon: "📋" }); setShowAddCat(false); setSaving(false);
   };
 
-  const removeCat = id => saveCat(categories.filter(c => c.id !== id));
-
-  const addCriteria = () => {
-    if (!newCrit.name.trim() || !showAddCrit) return;
-    saveCat(categories.map(c => c.id === showAddCrit ? { ...c, criteria: [...c.criteria, { id: uid(), name: newCrit.name.trim(), nameEn: newCrit.nameEn.trim(), desc: newCrit.desc.trim() }] } : c));
-    setNewCrit({ name: "", nameEn: "", desc: "" }); setShowAddCrit(null);
+  const removeCat = async id => { if (!confirm("ลบหมวดนี้?")) return; await fbSet("categories", catsArray.filter(c => c.id !== id)); };
+  const addCriteria = async () => {
+    if (!newCrit.name.trim() || !showAddCrit) return; setSaving(true);
+    await fbSet("categories", catsArray.map(c => c.id === showAddCrit ? { ...c, criteria: [...(c.criteria||[]), { id: uid(), name: newCrit.name.trim(), nameEn: newCrit.nameEn.trim(), desc: newCrit.desc.trim() }] } : c));
+    setNewCrit({ name: "", nameEn: "", desc: "" }); setShowAddCrit(null); setSaving(false);
   };
-
-  const removeCriteria = (catId, critId) => saveCat(categories.map(c => c.id === catId ? { ...c, criteria: c.criteria.filter(cr => cr.id !== critId) } : c));
+  const removeCriteria = async (catId, critId) => { await fbSet("categories", catsArray.map(c => c.id === catId ? { ...c, criteria: (c.criteria||[]).filter(cr => cr.id !== critId) } : c)); };
 
   const teamEmps = selectedTeam ? employees.filter(e => e.team === selectedTeam.id) : [];
   const getTeam = id => TEAMS.find(t => t.id === id);
-  const getLatestEval = empId => { const evs = evaluations.filter(e => e.employeeId === empId); return evs.length ? evs[evs.length - 1] : null; };
-  const calcAvg = scores => { const v = Object.values(scores).filter(x => typeof x === "number" && x > 0); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0; };
-  const scoreColor = avg => avg >= 4.5 ? "#3B82F6" : avg >= 3.5 ? "#10B981" : avg >= 2.5 ? "#F59E0B" : avg >= 1.5 ? "#F97316" : "#EF4444";
+  const getLatestEval = empId => { const e = evaluations.filter(x => x.employeeId === empId).sort((a,b) => b.date - a.date); return e[0] || null; };
+  const calcAvg = sc => { if(!sc) return 0; const v = Object.values(sc).filter(x => typeof x === "number" && x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0; };
+  const scoreColor = a => a >= 4.5 ? "#3B82F6" : a >= 3.5 ? "#10B981" : a >= 2.5 ? "#F59E0B" : a >= 1.5 ? "#F97316" : "#EF4444";
 
   const S = {
     card: { background: "#13161c", border: "1px solid #1e2028", borderRadius: 14, padding: 16, marginBottom: 12 },
-    btn: (c = "#5B8DEF") => ({ padding: "9px 18px", borderRadius: 10, border: "none", background: c, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }),
-    btnO: (c = "#5B8DEF") => ({ padding: "8px 16px", borderRadius: 10, border: `1.5px solid ${c}40`, background: "transparent", color: c, fontWeight: 600, fontSize: 13, cursor: "pointer" }),
+    btn: (c="#5B8DEF") => ({ padding: "9px 18px", borderRadius: 10, border: "none", background: c, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: saving?.6:1 }),
+    btnO: (c="#5B8DEF") => ({ padding: "8px 16px", borderRadius: 10, border: `1.5px solid ${c}40`, background: "transparent", color: c, fontWeight: 600, fontSize: 13, cursor: "pointer" }),
     input: { width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #2a2d35", background: "#1a1d24", color: "#e0e0e0", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" },
     label: { fontSize: 12, fontWeight: 600, color: "#8b8fa4", marginBottom: 5, display: "block" },
   };
 
-  // ─── SIDEBAR ───
-  const sidebar = (
-    <>
-      <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
-      <div className={`desktop-sidebar ${sidebarOpen ? "open" : ""}`} style={{
-        position: "fixed", left: 0, top: 0, bottom: 0, width: 230,
-        background: "#101318", borderRight: "1px solid #1e2028",
-        display: "flex", flexDirection: "column", zIndex: 20, overflowY: "auto",
-      }}>
-        <div style={{ padding: "20px 16px 14px", borderBottom: "1px solid #1e2028" }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 2, color: "#5B8DEF", marginBottom: 3 }}>DEC MEDIA</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#f0f0f0" }}>Employee Evaluation</div>
-        </div>
-        <div style={{ padding: "12px 10px 6px" }}>
-          {[{ id: "dashboard", icon: "📊", label: "Dashboard" }, { id: "settings", icon: "⚙️", label: "ตั้งค่าหัวข้อ" }].map(n => (
-            <button key={n.id} onClick={() => navigate(n.id)} style={{
-              display: "flex", alignItems: "center", gap: 9, width: "100%",
-              padding: "9px 11px", borderRadius: 10, border: "none",
-              background: view === n.id && !selectedTeam ? "#5B8DEF18" : "transparent",
-              color: view === n.id && !selectedTeam ? "#5B8DEF" : "#8b8fa4",
-              fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 2, textAlign: "left",
-            }}><span style={{ fontSize: 15 }}>{n.icon}</span> {n.label}</button>
-          ))}
-        </div>
-        <div style={{ padding: "6px 10px" }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1.5, color: "#4b5060", padding: "6px 11px 5px", textTransform: "uppercase" }}>Teams</div>
-          {TEAMS.map(t => {
-            const cnt = employees.filter(e => e.team === t.id).length;
-            return (
-              <button key={t.id} onClick={() => navigate("team", t)} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                width: "100%", padding: "8px 11px", borderRadius: 10, border: "none",
-                background: selectedTeam?.id === t.id ? t.color + "18" : "transparent",
-                color: selectedTeam?.id === t.id ? t.color : "#8b8fa4",
-                fontSize: 12, fontWeight: 600, cursor: "pointer", marginBottom: 1, textAlign: "left",
-              }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 13 }}>{t.icon}</span> {t.name}</span>
-                {cnt > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: t.color + "22", color: t.color, padding: "2px 6px", borderRadius: 5 }}>{cnt}</span>}
-              </button>
-            );
-          })}
-        </div>
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: "#0c0e13", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ textAlign: "center", color: "#6b7280" }}>
+        <div style={{ fontSize: 32, marginBottom: 12, animation: "pulse 1.5s infinite" }}>🔄</div>
+        <div>กำลังเชื่อมต่อฐานข้อมูล...</div>
       </div>
-    </>
-  );
-
-  // ─── MOBILE HEADER ───
-  const mobileHeader = (
-    <div style={{ display: "none", padding: "12px 16px", background: "#101318", borderBottom: "1px solid #1e2028", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 15 }}
-      className="mobile-header">
-      <button onClick={() => setSidebarOpen(true)} style={{ background: "none", border: "none", color: "#e0e0e0", fontSize: 22, cursor: "pointer", padding: 4 }}>☰</button>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#5B8DEF" }}>DEC MEDIA</div>
-      <div style={{ width: 30 }} />
     </div>
   );
 
   return (
     <div>
-      <style>{`
-        @media (max-width: 768px) {
-          .mobile-header { display: flex !important; }
-        }
-      `}</style>
-      {sidebar}
-      {mobileHeader}
+      <style>{`@media(max-width:768px){.mobile-header{display:flex!important;}}`}</style>
 
-      <div className="main-content" style={{ marginLeft: 230, padding: "24px 28px", minHeight: "100vh" }}>
+      {/* Sidebar */}
+      <div className={`sidebar-overlay ${sidebarOpen?"open":""}`} onClick={()=>setSidebarOpen(false)} />
+      <div className={`desktop-sidebar ${sidebarOpen?"open":""}`} style={{ position:"fixed",left:0,top:0,bottom:0,width:230, background:"#101318",borderRight:"1px solid #1e2028", display:"flex",flexDirection:"column",zIndex:20,overflowY:"auto" }}>
+        <div style={{ padding:"20px 16px 14px", borderBottom:"1px solid #1e2028" }}>
+          <div style={{ fontSize:10,fontWeight:700,letterSpacing:2,color:"#5B8DEF",marginBottom:3 }}>DEC MEDIA</div>
+          <div style={{ fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:8 }}>Employee Evaluation</div>
+          <div style={{ display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8, background:connected?"#10B98114":"#EF444414",fontSize:10,fontWeight:600, color:connected?"#10B981":"#EF4444" }}>
+            <span style={{ width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444", animation:connected?"none":"pulse 1.5s infinite" }}/>
+            {connected ? "Online — ซิงค์แล้ว" : "กำลังเชื่อมต่อ..."}
+          </div>
+        </div>
+        <div style={{ padding:"12px 10px 6px" }}>
+          {[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"settings",icon:"⚙️",label:"ตั้งค่าหัวข้อ"}].map(n=>(
+            <button key={n.id} onClick={()=>nav(n.id)} style={{ display:"flex",alignItems:"center",gap:9,width:"100%", padding:"9px 11px",borderRadius:10,border:"none", background:view===n.id&&!selectedTeam?"#5B8DEF18":"transparent", color:view===n.id&&!selectedTeam?"#5B8DEF":"#8b8fa4", fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:2,textAlign:"left" }}><span style={{fontSize:15}}>{n.icon}</span> {n.label}</button>
+          ))}
+        </div>
+        <div style={{ padding:"6px 10px" }}>
+          <div style={{ fontSize:9,fontWeight:700,letterSpacing:1.5,color:"#4b5060",padding:"6px 11px 5px",textTransform:"uppercase" }}>Teams</div>
+          {TEAMS.map(t=>{
+            const cnt=employees.filter(e=>e.team===t.id).length;
+            return(
+              <button key={t.id} onClick={()=>nav("team",t)} style={{ display:"flex",alignItems:"center",justifyContent:"space-between", width:"100%",padding:"8px 11px",borderRadius:10,border:"none", background:selectedTeam?.id===t.id?t.color+"18":"transparent", color:selectedTeam?.id===t.id?t.color:"#8b8fa4", fontSize:12,fontWeight:600,cursor:"pointer",marginBottom:1,textAlign:"left" }}>
+                <span style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:13}}>{t.icon}</span> {t.name}</span>
+                {cnt>0&&<span style={{fontSize:9,fontWeight:700,background:t.color+"22",color:t.color,padding:"2px 6px",borderRadius:5}}>{cnt}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Mobile Header */}
+      <div className="mobile-header" style={{ display:"none",padding:"12px 16px",background:"#101318",borderBottom:"1px solid #1e2028",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:15 }}>
+        <button onClick={()=>setSidebarOpen(true)} style={{ background:"none",border:"none",color:"#e0e0e0",fontSize:22,cursor:"pointer",padding:4 }}>☰</button>
+        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+          <span style={{ fontSize:13,fontWeight:700,color:"#5B8DEF" }}>DEC MEDIA</span>
+          <span style={{ width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444" }}/>
+        </div>
+        <div style={{width:30}}/>
+      </div>
+
+      <div className="main-content" style={{ marginLeft:230,padding:"24px 28px",minHeight:"100vh" }}>
 
         {/* ═══ DASHBOARD ═══ */}
-        {view === "dashboard" && (
-          <div style={{ animation: "slideUp .3s ease" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: "#f0f0f0", marginBottom: 4 }}>Dashboard</h2>
-            <p style={{ color: "#6b7280", fontSize: 12, marginBottom: 22 }}>ภาพรวมการประเมินพนักงานทุกทีม</p>
+        {view==="dashboard"&&(
+          <div style={{animation:"slideUp .3s ease"}}>
+            <h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>Dashboard</h2>
+            <p style={{color:"#6b7280",fontSize:12,marginBottom:22}}>ภาพรวมการประเมิน — ข้อมูลอัพเดท real-time ทุกคนเห็นเหมือนกัน</p>
 
-            <div className="stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
               {[
-                { label: "พนักงานทั้งหมด", value: employees.length, icon: "👤", color: "#5B8DEF" },
-                { label: "ประเมินแล้ว", value: new Set(evaluations.map(e => e.employeeId)).size, icon: "✅", color: "#10B981" },
-                { label: "รอประเมิน", value: employees.length - new Set(evaluations.map(e => e.employeeId)).size, icon: "⏳", color: "#F59E0B" },
-                { label: "ประเมินทั้งหมด", value: evaluations.length, icon: "📝", color: "#A855F7" },
-              ].map((s, i) => (
-                <div key={i} style={{ ...S.card, display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, background: s.color + "14", flexShrink: 0 }}>{s.icon}</div>
+                {label:"พนักงานทั้งหมด",value:employees.length,icon:"👤",color:"#5B8DEF"},
+                {label:"ประเมินแล้ว",value:new Set(evaluations.map(e=>e.employeeId)).size,icon:"✅",color:"#10B981"},
+                {label:"รอประเมิน",value:employees.length-new Set(evaluations.map(e=>e.employeeId)).size,icon:"⏳",color:"#F59E0B"},
+                {label:"ประเมินทั้งหมด",value:evaluations.length,icon:"📝",color:"#A855F7"},
+              ].map((s,i)=>(
+                <div key={i} style={{...S.card,display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:40,height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,background:s.color+"14",flexShrink:0}}>{s.icon}</div>
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 700, color: "#f0f0f0" }}>{s.value}</div>
-                    <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500 }}>{s.label}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:"#f0f0f0"}}>{s.value}</div>
+                    <div style={{fontSize:10,color:"#6b7280",fontWeight:500}}>{s.label}</div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <h3 style={{ fontSize: 14, fontWeight: 700, color: "#c0c4d0", marginBottom: 12 }}>ภาพรวมแต่ละทีม</h3>
-            <div className="team-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-              {TEAMS.map(t => {
-                const te = employees.filter(e => e.team === t.id);
-                const tevs = evaluations.filter(ev => te.some(e => e.id === ev.employeeId));
-                const avg = tevs.length ? tevs.reduce((s, ev) => s + calcAvg(ev.scores), 0) / tevs.length : 0;
-                return (
-                  <div key={t.id} style={{ ...S.card, cursor: "pointer" }} onClick={() => navigate("team", t)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                      <span style={{ fontSize: 20 }}>{t.icon}</span>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: t.color }}>{t.name}</div>
-                        <div style={{ fontSize: 10, color: "#6b7280" }}>{te.length} คน</div>
-                      </div>
+            <h3 style={{fontSize:14,fontWeight:700,color:"#c0c4d0",marginBottom:12}}>ภาพรวมแต่ละทีม</h3>
+            <div className="team-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+              {TEAMS.map(t=>{
+                const te=employees.filter(e=>e.team===t.id);
+                const tevs=evaluations.filter(ev=>te.some(e=>e.id===ev.employeeId));
+                const avg=tevs.length?tevs.reduce((s,ev)=>s+calcAvg(ev.scores),0)/tevs.length:0;
+                return(
+                  <div key={t.id} style={{...S.card,cursor:"pointer"}} onClick={()=>nav("team",t)}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                      <span style={{fontSize:20}}>{t.icon}</span>
+                      <div><div style={{fontSize:12,fontWeight:700,color:t.color}}>{t.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{te.length} คน</div></div>
                     </div>
-                    {avg > 0 ? (
+                    {avg>0?(
                       <div>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                          <span style={{ fontSize: 10, color: "#6b7280" }}>คะแนนเฉลี่ย</span>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(avg) }}>{avg.toFixed(1)}</span>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                          <span style={{fontSize:10,color:"#6b7280"}}>คะแนนเฉลี่ย</span>
+                          <span style={{fontSize:13,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</span>
                         </div>
-                        <div style={{ height: 4, background: "#1e2028", borderRadius: 3 }}>
-                          <div style={{ height: "100%", width: `${(avg/5)*100}%`, background: scoreColor(avg), borderRadius: 3 }} />
-                        </div>
+                        <div style={{height:4,background:"#1e2028",borderRadius:3}}><div style={{height:"100%",width:`${(avg/5)*100}%`,background:scoreColor(avg),borderRadius:3}}/></div>
                       </div>
-                    ) : <div style={{ fontSize: 10, color: "#4b5060" }}>ยังไม่มีการประเมิน</div>}
+                    ):<div style={{fontSize:10,color:"#4b5060"}}>ยังไม่มีการประเมิน</div>}
                   </div>
                 );
               })}
@@ -359,145 +385,124 @@ function App() {
           </div>
         )}
 
-        {/* ═══ TEAM VIEW ═══ */}
-        {view === "team" && selectedTeam && (
-          <div style={{ animation: "slideUp .3s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+        {/* ═══ TEAM ═══ */}
+        {view==="team"&&selectedTeam&&(
+          <div style={{animation:"slideUp .3s ease"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                  <span style={{ fontSize: 24 }}>{selectedTeam.icon}</span>
-                  <h2 style={{ fontSize: 20, fontWeight: 700, color: selectedTeam.color, margin: 0 }}>{selectedTeam.name}</h2>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                  <span style={{fontSize:24}}>{selectedTeam.icon}</span>
+                  <h2 style={{fontSize:20,fontWeight:700,color:selectedTeam.color,margin:0}}>{selectedTeam.name}</h2>
                 </div>
-                <p style={{ color: "#6b7280", fontSize: 12 }}>{teamEmps.length} พนักงานในทีม</p>
+                <p style={{color:"#6b7280",fontSize:12}}>{teamEmps.length} พนักงาน</p>
               </div>
-              <button onClick={() => { setNewEmp({ name: "", team: selectedTeam.id, role: "", isLeader: false }); setShowAddEmp(true); }} style={S.btn(selectedTeam.color)}>+ เพิ่มพนักงาน</button>
+              <button onClick={()=>{setNewEmp({name:"",team:selectedTeam.id,role:"",isLeader:false});setShowAddEmp(true);}} style={S.btn(selectedTeam.color)}>+ เพิ่มพนักงาน</button>
             </div>
-
-            {teamEmps.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "50px 16px", color: "#4b5060" }}>
-                <div style={{ fontSize: 40, marginBottom: 10, opacity: .5 }}>👤</div>
-                <div style={{ fontSize: 14, color: "#6b7280", fontWeight: 600 }}>ยังไม่มีพนักงานในทีมนี้</div>
-                <div style={{ fontSize: 12, marginTop: 5 }}>กดปุ่ม "+ เพิ่มพนักงาน" เพื่อเริ่มต้น</div>
+            {teamEmps.length===0?(
+              <div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}>
+                <div style={{fontSize:40,marginBottom:10,opacity:.5}}>👤</div>
+                <div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มีพนักงานในทีมนี้</div>
               </div>
-            ) : (
-              teamEmps.map(emp => {
-                const ev = getLatestEval(emp.id);
-                const avg = ev ? calcAvg(ev.scores) : 0;
-                return (
-                  <div key={emp.id} className="emp-card-row" style={{ ...S.card, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 10, background: selectedTeam.color + "18", color: selectedTeam.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, flexShrink: 0 }}>{emp.name.charAt(0)}</div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#f0f0f0" }}>
-                          {emp.name}
-                          {emp.isLeader && <Badge color="#F59E0B" style={{ marginLeft: 6 }}>หัวหน้า</Badge>}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>{emp.role || "ไม่ระบุตำแหน่ง"}</div>
-                      </div>
-                    </div>
-                    <div className="emp-card-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {avg > 0 && <div style={{ textAlign: "right", marginRight: 4 }}><div style={{ fontSize: 16, fontWeight: 700, color: scoreColor(avg) }}>{avg.toFixed(1)}</div><div style={{ fontSize: 9, color: "#6b7280" }}>ล่าสุด</div></div>}
-                      {ev && <button onClick={() => { setViewResult(emp); setView("results"); }} style={S.btnO("#A855F7")}>ดูผล</button>}
-                      <button onClick={() => startEval(emp)} style={S.btn(selectedTeam.color)}>ประเมิน</button>
-                      <button onClick={() => { if(confirm("ลบพนักงานคนนี้?")) removeEmployee(emp.id); }} style={{ background: "none", border: "1.5px solid #EF444440", color: "#EF4444", padding: "8px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>ลบ</button>
+            ):(teamEmps.map(emp=>{
+              const ev=getLatestEval(emp.id); const avg=ev?calcAvg(ev.scores):0;
+              return(
+                <div key={emp._key} className="emp-card-row" style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:selectedTeam.color+"18",color:selectedTeam.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>{emp.name.charAt(0)}</div>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{emp.name}{emp.isLeader&&<Badge color="#F59E0B" style={{marginLeft:6}}>หัวหน้า</Badge>}</div>
+                      <div style={{fontSize:11,color:"#6b7280"}}>{emp.role||"ไม่ระบุตำแหน่ง"}</div>
                     </div>
                   </div>
-                );
-              })
-            )}
+                  <div className="emp-card-actions" style={{display:"flex",alignItems:"center",gap:8}}>
+                    {avg>0&&<div style={{textAlign:"right",marginRight:4}}><div style={{fontSize:16,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:"#6b7280"}}>ล่าสุด</div></div>}
+                    {ev&&<button onClick={()=>{setViewResult(emp);setView("results");}} style={S.btnO("#A855F7")}>ดูผล</button>}
+                    <button onClick={()=>startEval(emp)} style={S.btn(selectedTeam.color)}>ประเมิน</button>
+                    <button onClick={()=>removeEmployee(emp)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600,cursor:"pointer"}}>ลบ</button>
+                  </div>
+                </div>
+              );
+            }))}
           </div>
         )}
 
         {/* ═══ EVALUATE ═══ */}
-        {view === "evaluate" && evalTarget && (
-          <div style={{ animation: "slideUp .3s ease", maxWidth: 650 }}>
-            <button onClick={() => setView("team")} style={{ ...S.btnO("#6b7280"), marginBottom: 16 }}>← กลับ</button>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: (getTeam(evalTarget.team)?.color || "#5B8DEF") + "18", color: getTeam(evalTarget.team)?.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, flexShrink: 0 }}>{evalTarget.name.charAt(0)}</div>
+        {view==="evaluate"&&evalTarget&&(
+          <div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+            <button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+              <div style={{width:44,height:44,borderRadius:12,background:(getTeam(evalTarget.team)?.color||"#5B8DEF")+"18",color:getTeam(evalTarget.team)?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,flexShrink:0}}>{evalTarget.name.charAt(0)}</div>
               <div>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#f0f0f0", margin: 0 }}>ประเมิน: {evalTarget.name}</h2>
-                <div style={{ fontSize: 11, color: "#6b7280" }}>{evalTarget.role} • {getTeam(evalTarget.team)?.name}</div>
+                <h2 style={{fontSize:18,fontWeight:700,color:"#f0f0f0",margin:0}}>ประเมิน: {evalTarget.name}</h2>
+                <div style={{fontSize:11,color:"#6b7280"}}>{evalTarget.role} • {getTeam(evalTarget.team)?.name}</div>
               </div>
             </div>
-
-            <div style={{ ...S.card, display: "flex", gap: 12, flexWrap: "wrap", padding: "12px 16px", marginBottom: 6 }}>
-              <span style={{ fontSize: 10, color: "#6b7280", fontWeight: 600 }}>เกณฑ์:</span>
-              {SCORE_LABELS.map(s => <span key={s.value} style={{ fontSize: 10, color: s.color, fontWeight: 600 }}>{s.value}={s.label}</span>)}
+            <div style={{...S.card,display:"flex",gap:12,flexWrap:"wrap",padding:"12px 16px",marginBottom:6}}>
+              <span style={{fontSize:10,color:"#6b7280",fontWeight:600}}>เกณฑ์:</span>
+              {SCORE_LABELS.map(s=><span key={s.value} style={{fontSize:10,color:s.color,fontWeight:600}}>{s.value}={s.label}</span>)}
             </div>
-
-            {categories.filter(cat => cat.id !== "leadership" || evalTarget.isLeader).map(cat => (
+            {catsArray.filter(cat=>cat.id!=="leadership"||evalTarget.isLeader).map(cat=>(
               <div key={cat.id} style={S.card}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-                  <span style={{ fontSize: 16 }}>{cat.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e0e0e0" }}>{cat.name}</span>
-                  <span style={{ fontSize: 10, color: "#6b7280" }}>{cat.nameEn}</span>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:14}}>
+                  <span style={{fontSize:16}}>{cat.icon}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span>
+                  <span style={{fontSize:10,color:"#6b7280"}}>{cat.nameEn}</span>
                 </div>
-                {cat.criteria.map(cr => (
-                  <div key={cr.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid #1e2028", flexWrap: "wrap", gap: 8 }}>
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: "#c0c4d0" }}>{cr.name}</div>
-                      <div style={{ fontSize: 10, color: "#6b7280" }}>{cr.desc}</div>
+                {(cat.criteria||[]).map(cr=>(
+                  <div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid #1e2028",flexWrap:"wrap",gap:8}}>
+                    <div style={{flex:1,minWidth:140}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</div>
+                      <div style={{fontSize:10,color:"#6b7280"}}>{cr.desc}</div>
                     </div>
-                    <ScoreInput value={evalScores[cr.id] || 0} onChange={v => setEvalScores({ ...evalScores, [cr.id]: v })} />
+                    <ScoreInput value={evalScores[cr.id]||0} onChange={v=>setEvalScores({...evalScores,[cr.id]:v})}/>
                   </div>
                 ))}
               </div>
             ))}
-
             <div style={S.card}>
               <label style={S.label}>หมายเหตุ / ข้อเสนอแนะ</label>
-              <textarea value={evalNote} onChange={e => setEvalNote(e.target.value)} placeholder="เพิ่มความคิดเห็น..." style={{ ...S.input, minHeight: 70, resize: "vertical" }} />
+              <textarea value={evalNote} onChange={e=>setEvalNote(e.target.value)} placeholder="เพิ่มความคิดเห็น..." style={{...S.input,minHeight:70,resize:"vertical"}}/>
             </div>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-              <button onClick={() => setView("team")} style={S.btnO("#6b7280")}>ยกเลิก</button>
-              <button onClick={submitEval} style={S.btn("#10B981")}>✓ บันทึกการประเมิน</button>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}>
+              <button onClick={()=>setView("team")} style={S.btnO("#6b7280")}>ยกเลิก</button>
+              <button onClick={submitEval} disabled={saving} style={S.btn("#10B981")}>{saving?"กำลังบันทึก...":"✓ บันทึกการประเมิน"}</button>
             </div>
           </div>
         )}
 
         {/* ═══ RESULTS ═══ */}
-        {view === "results" && viewResult && (() => {
-          const evs = evaluations.filter(e => e.employeeId === viewResult.id).sort((a, b) => b.date - a.date);
-          const latest = evs[0];
-          if (!latest) return <div style={{ textAlign: "center", padding: 50, color: "#4b5060" }}>ยังไม่มีผลการประเมิน</div>;
-          const avg = calcAvg(latest.scores);
-          const team = getTeam(viewResult.team);
-          return (
-            <div style={{ animation: "slideUp .3s ease", maxWidth: 650 }}>
-              <button onClick={() => setView("team")} style={{ ...S.btnO("#6b7280"), marginBottom: 16 }}>← กลับ</button>
-              <div style={{ ...S.card, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 48, height: 48, borderRadius: 12, background: (team?.color || "#5B8DEF") + "18", color: team?.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 700 }}>{viewResult.name.charAt(0)}</div>
-                  <div>
-                    <h2 style={{ fontSize: 16, fontWeight: 700, color: "#f0f0f0", margin: 0 }}>{viewResult.name}</h2>
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>{viewResult.role} • {team?.name}</div>
-                  </div>
+        {view==="results"&&viewResult&&(()=>{
+          const evs=evaluations.filter(e=>e.employeeId===viewResult.id).sort((a,b)=>b.date-a.date);
+          const latest=evs[0]; if(!latest) return <div style={{textAlign:"center",padding:50,color:"#4b5060"}}>ยังไม่มีผล</div>;
+          const avg=calcAvg(latest.scores); const team=getTeam(viewResult.team);
+          return(
+            <div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+              <button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
+              <div style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:48,height:48,borderRadius:12,background:(team?.color||"#5B8DEF")+"18",color:team?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700}}>{viewResult.name.charAt(0)}</div>
+                  <div><h2 style={{fontSize:16,fontWeight:700,color:"#f0f0f0",margin:0}}>{viewResult.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{viewResult.role} • {team?.name}</div></div>
                 </div>
-                <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: scoreColor(avg) }}>{avg.toFixed(2)}</div>
-                  <div style={{ fontSize: 10, color: "#6b7280" }}>คะแนนเฉลี่ย</div>
-                </div>
+                <div style={{textAlign:"center"}}><div style={{fontSize:28,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(2)}</div><div style={{fontSize:10,color:"#6b7280"}}>คะแนนเฉลี่ย</div></div>
               </div>
 
-              {categories.filter(cat => cat.id !== "leadership" || viewResult.isLeader).map(cat => {
-                const cs = cat.criteria.map(cr => latest.scores[cr.id]).filter(v => v > 0);
-                const ca = cs.length ? cs.reduce((a, b) => a + b, 0) / cs.length : 0;
-                return (
+              {catsArray.filter(cat=>cat.id!=="leadership"||viewResult.isLeader).map(cat=>{
+                const cs=(cat.criteria||[]).map(cr=>latest.scores?.[cr.id]).filter(v=>v>0);
+                const ca=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:0;
+                return(
                   <div key={cat.id} style={S.card}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 15 }}>{cat.icon}</span><span style={{ fontSize: 13, fontWeight: 700, color: "#e0e0e0" }}>{cat.name}</span></div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: scoreColor(ca) }}>{ca > 0 ? ca.toFixed(1) : "-"}</span>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:15}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span></div>
+                      <span style={{fontSize:15,fontWeight:700,color:scoreColor(ca)}}>{ca>0?ca.toFixed(1):"-"}</span>
                     </div>
-                    {cat.criteria.map(cr => {
-                      const sc = latest.scores[cr.id] || 0;
-                      const sl = SCORE_LABELS.find(s => s.value === sc);
-                      return (
-                        <div key={cr.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: "1px solid #1e2028" }}>
-                          <span style={{ fontSize: 12, color: "#c0c4d0" }}>{cr.name}</span>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            {sc > 0 && <span style={{ fontSize: 10, color: sl?.color }}>{sl?.label}</span>}
-                            <span style={{ width: 28, height: 28, borderRadius: 7, background: sc > 0 ? (sl?.color) + "18" : "#1e2028", color: sc > 0 ? sl?.color : "#4b5060", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700 }}>{sc || "-"}</span>
+                    {(cat.criteria||[]).map(cr=>{
+                      const sc=latest.scores?.[cr.id]||0; const sl=SCORE_LABELS.find(s=>s.value===sc);
+                      return(
+                        <div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}>
+                          <span style={{fontSize:12,color:"#c0c4d0"}}>{cr.name}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            {sc>0&&<span style={{fontSize:10,color:sl?.color}}>{sl?.label}</span>}
+                            <span style={{width:28,height:28,borderRadius:7,background:sc>0?(sl?.color)+"18":"#1e2028",color:sc>0?sl?.color:"#4b5060",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700}}>{sc||"-"}</span>
                           </div>
                         </div>
                       );
@@ -506,15 +511,15 @@ function App() {
                 );
               })}
 
-              {latest.note && <div style={S.card}><div style={{ fontSize: 11, fontWeight: 600, color: "#6b7280", marginBottom: 6 }}>หมายเหตุ</div><div style={{ fontSize: 12, color: "#c0c4d0", lineHeight: 1.6 }}>{latest.note}</div></div>}
+              {latest.note&&<div style={S.card}><div style={{fontSize:11,fontWeight:600,color:"#6b7280",marginBottom:6}}>หมายเหตุ</div><div style={{fontSize:12,color:"#c0c4d0",lineHeight:1.6}}>{latest.note}</div></div>}
 
-              {evs.length > 1 && (
+              {evs.length>1&&(
                 <div style={S.card}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#e0e0e0", marginBottom: 10 }}>ประวัติ ({evs.length} ครั้ง)</div>
-                  {evs.map((ev, i) => (
-                    <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i > 0 ? "1px solid #1e2028" : "none" }}>
-                      <span style={{ fontSize: 11, color: "#6b7280" }}>{new Date(ev.date).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" })}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(calcAvg(ev.scores)) }}>{calcAvg(ev.scores).toFixed(2)}</span>
+                  <div style={{fontSize:12,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>ประวัติ ({evs.length} ครั้ง)</div>
+                  {evs.map((ev,i)=>(
+                    <div key={ev._key||i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:i>0?"1px solid #1e2028":"none"}}>
+                      <span style={{fontSize:11,color:"#6b7280"}}>{new Date(ev.date).toLocaleDateString("th-TH",{year:"numeric",month:"short",day:"numeric"})}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:scoreColor(calcAvg(ev.scores))}}>{calcAvg(ev.scores).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
@@ -524,74 +529,69 @@ function App() {
         })()}
 
         {/* ═══ SETTINGS ═══ */}
-        {view === "settings" && (
-          <div style={{ animation: "slideUp .3s ease", maxWidth: 650 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
-              <div>
-                <h2 style={{ fontSize: 20, fontWeight: 700, color: "#f0f0f0", margin: 0 }}>ตั้งค่าหัวข้อประเมิน</h2>
-                <p style={{ color: "#6b7280", fontSize: 12, marginTop: 3 }}>เพิ่ม ลบ หรือแก้ไขหมวดหมู่และเกณฑ์</p>
-              </div>
-              <button onClick={() => setShowAddCat(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหมวด</button>
+        {view==="settings"&&(
+          <div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+              <div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>ตั้งค่าหัวข้อประเมิน</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>เพิ่ม ลบ หรือแก้ไขหมวดหมู่และเกณฑ์</p></div>
+              <button onClick={()=>setShowAddCat(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหมวด</button>
             </div>
-
-            {categories.map(cat => (
+            {catsArray.map(cat=>(
               <div key={cat.id} style={S.card}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ fontSize: 18 }}>{cat.icon}</span><span style={{ fontSize: 14, fontWeight: 700, color: "#e0e0e0" }}>{cat.name}</span><span style={{ fontSize: 11, color: "#6b7280" }}>{cat.nameEn}</span></div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => setShowAddCrit(cat.id)} style={S.btnO("#10B981")}>+ เกณฑ์</button>
-                    <button onClick={() => { if(confirm("ลบหมวดนี้?")) removeCat(cat.id); }} style={S.btnO("#EF4444")}>ลบหมวด</button>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:18}}>{cat.icon}</span><span style={{fontSize:14,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:11,color:"#6b7280"}}>{cat.nameEn}</span></div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>setShowAddCrit(cat.id)} style={S.btnO("#10B981")}>+ เกณฑ์</button>
+                    <button onClick={()=>removeCat(cat.id)} style={S.btnO("#EF4444")}>ลบหมวด</button>
                   </div>
                 </div>
-                {cat.criteria.length === 0 ? <div style={{ fontSize: 11, color: "#4b5060", padding: "10px 0" }}>ยังไม่มีเกณฑ์</div> : cat.criteria.map(cr => (
-                  <div key={cr.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: "1px solid #1e2028" }}>
-                    <div><span style={{ fontSize: 12, fontWeight: 600, color: "#c0c4d0" }}>{cr.name}</span>{cr.nameEn && <span style={{ fontSize: 10, color: "#6b7280", marginLeft: 6 }}>{cr.nameEn}</span>}{cr.desc && <div style={{ fontSize: 10, color: "#4b5060", marginTop: 1 }}>{cr.desc}</div>}</div>
-                    <button onClick={() => removeCriteria(cat.id, cr.id)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 15, padding: 4 }}>✕</button>
+                {(!cat.criteria||cat.criteria.length===0)?<div style={{fontSize:11,color:"#4b5060",padding:"10px 0"}}>ยังไม่มีเกณฑ์</div>:cat.criteria.map(cr=>(
+                  <div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}>
+                    <div><span style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</span>{cr.nameEn&&<span style={{fontSize:10,color:"#6b7280",marginLeft:6}}>{cr.nameEn}</span>}{cr.desc&&<div style={{fontSize:10,color:"#4b5060",marginTop:1}}>{cr.desc}</div>}</div>
+                    <button onClick={()=>removeCriteria(cat.id,cr.id)} style={{background:"none",border:"none",color:"#EF4444",cursor:"pointer",fontSize:15,padding:4}}>✕</button>
                   </div>
                 ))}
               </div>
             ))}
-
-            <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #1e2028" }}>
-              <button onClick={() => { if(confirm("รีเซ็ตเป็นค่าเริ่มต้น?")) saveCat(DEFAULT_CATEGORIES); }} style={S.btnO("#F97316")}>🔄 รีเซ็ตค่าเริ่มต้น</button>
+            <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #1e2028"}}>
+              <button onClick={()=>{if(confirm("รีเซ็ตเป็นค่าเริ่มต้น?"))fbSet("categories",DEFAULT_CATEGORIES);}} style={S.btnO("#F97316")}>🔄 รีเซ็ตค่าเริ่มต้น</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* ═══ MODALS ═══ */}
-      <Modal open={showAddEmp} onClose={() => setShowAddEmp(false)} title="เพิ่มพนักงาน">
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div><label style={S.label}>ชื่อ-นามสกุล</label><input style={S.input} value={newEmp.name} onChange={e => setNewEmp({...newEmp, name: e.target.value})} placeholder="ชื่อพนักงาน" /></div>
-          <div><label style={S.label}>ทีม</label><select style={S.input} value={newEmp.team} onChange={e => setNewEmp({...newEmp, team: e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-          <div><label style={S.label}>ตำแหน่ง</label><input style={S.input} value={newEmp.role} onChange={e => setNewEmp({...newEmp, role: e.target.value})} placeholder="ตำแหน่งงาน" /></div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={newEmp.isLeader} onChange={e => setNewEmp({...newEmp, isLeader: e.target.checked})} /><span style={{ fontSize: 12, color: "#c0c4d0" }}>เป็นหัวหน้างาน (ประเมินภาวะผู้นำด้วย)</span></label>
-          <button onClick={addEmployee} style={{ ...S.btn("#10B981"), marginTop: 4 }}>เพิ่มพนักงาน</button>
+      {/* MODALS */}
+      <Modal open={showAddEmp} onClose={()=>setShowAddEmp(false)} title="เพิ่มพนักงาน">
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><label style={S.label}>ชื่อ-นามสกุล</label><input style={S.input} value={newEmp.name} onChange={e=>setNewEmp({...newEmp,name:e.target.value})} placeholder="ชื่อพนักงาน"/></div>
+          <div><label style={S.label}>ทีม</label><select style={S.input} value={newEmp.team} onChange={e=>setNewEmp({...newEmp,team:e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+          <div><label style={S.label}>ตำแหน่ง</label><input style={S.input} value={newEmp.role} onChange={e=>setNewEmp({...newEmp,role:e.target.value})} placeholder="ตำแหน่งงาน"/></div>
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}><input type="checkbox" checked={newEmp.isLeader} onChange={e=>setNewEmp({...newEmp,isLeader:e.target.checked})}/><span style={{fontSize:12,color:"#c0c4d0"}}>เป็นหัวหน้างาน</span></label>
+          <button onClick={addEmployee} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มพนักงาน"}</button>
         </div>
       </Modal>
 
-      <Modal open={showAddCat} onClose={() => setShowAddCat(false)} title="เพิ่มหมวดประเมิน">
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div><label style={S.label}>ชื่อหมวด (ไทย)</label><input style={S.input} value={newCat.name} onChange={e => setNewCat({...newCat, name: e.target.value})} placeholder="เช่น ความคิดสร้างสรรค์" /></div>
-          <div><label style={S.label}>ชื่อหมวด (English)</label><input style={S.input} value={newCat.nameEn} onChange={e => setNewCat({...newCat, nameEn: e.target.value})} placeholder="e.g. Creativity" /></div>
-          <div><label style={S.label}>ไอคอน (Emoji)</label><input style={{...S.input, width: 80}} value={newCat.icon} onChange={e => setNewCat({...newCat, icon: e.target.value})} /></div>
-          <button onClick={addCategory} style={{ ...S.btn("#10B981"), marginTop: 4 }}>เพิ่มหมวด</button>
+      <Modal open={showAddCat} onClose={()=>setShowAddCat(false)} title="เพิ่มหมวดประเมิน">
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><label style={S.label}>ชื่อหมวด (ไทย)</label><input style={S.input} value={newCat.name} onChange={e=>setNewCat({...newCat,name:e.target.value})} placeholder="เช่น ความคิดสร้างสรรค์"/></div>
+          <div><label style={S.label}>ชื่อหมวด (English)</label><input style={S.input} value={newCat.nameEn} onChange={e=>setNewCat({...newCat,nameEn:e.target.value})} placeholder="e.g. Creativity"/></div>
+          <div><label style={S.label}>ไอคอน</label><input style={{...S.input,width:80}} value={newCat.icon} onChange={e=>setNewCat({...newCat,icon:e.target.value})}/></div>
+          <button onClick={addCategory} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มหมวด"}</button>
         </div>
       </Modal>
 
-      <Modal open={!!showAddCrit} onClose={() => setShowAddCrit(null)} title={`เพิ่มเกณฑ์: ${categories.find(c => c.id === showAddCrit)?.name || ""}`}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div><label style={S.label}>ชื่อเกณฑ์ (ไทย)</label><input style={S.input} value={newCrit.name} onChange={e => setNewCrit({...newCrit, name: e.target.value})} placeholder="เช่น ทักษะการนำเสนอ" /></div>
-          <div><label style={S.label}>ชื่อเกณฑ์ (English)</label><input style={S.input} value={newCrit.nameEn} onChange={e => setNewCrit({...newCrit, nameEn: e.target.value})} placeholder="e.g. Presentation Skills" /></div>
-          <div><label style={S.label}>คำอธิบาย</label><input style={S.input} value={newCrit.desc} onChange={e => setNewCrit({...newCrit, desc: e.target.value})} placeholder="รายละเอียดของเกณฑ์" /></div>
-          <button onClick={addCriteria} style={{ ...S.btn("#10B981"), marginTop: 4 }}>เพิ่มเกณฑ์</button>
+      <Modal open={!!showAddCrit} onClose={()=>setShowAddCrit(null)} title={`เพิ่มเกณฑ์: ${catsArray.find(c=>c.id===showAddCrit)?.name||""}`}>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div><label style={S.label}>ชื่อเกณฑ์ (ไทย)</label><input style={S.input} value={newCrit.name} onChange={e=>setNewCrit({...newCrit,name:e.target.value})} placeholder="เช่น ทักษะการนำเสนอ"/></div>
+          <div><label style={S.label}>ชื่อเกณฑ์ (English)</label><input style={S.input} value={newCrit.nameEn} onChange={e=>setNewCrit({...newCrit,nameEn:e.target.value})} placeholder="e.g. Presentation Skills"/></div>
+          <div><label style={S.label}>คำอธิบาย</label><input style={S.input} value={newCrit.desc} onChange={e=>setNewCrit({...newCrit,desc:e.target.value})} placeholder="รายละเอียด"/></div>
+          <button onClick={addCriteria} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มเกณฑ์"}</button>
         </div>
       </Modal>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
