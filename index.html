@@ -43,8 +43,9 @@ window.db=firebase.database();window.auth=firebase.auth();window.gProvider=new f
 const{useState,useEffect,useMemo}=React;
 const db=window.db,auth=window.auth;
 
-// ══════ CONSTANTS ══════
-const ADMIN_EMAILS=["manmadum@gmail.com"];
+// Super admin ฝังในโค้ด — ลบไม่ได้จากหน้าแอพ (เพื่อความปลอดภัย)
+const SUPER_ADMIN="manmadum@gmail.com";
+
 const TEAMS=[
 {id:"innovation",name:"INNOVATION",color:"#E8453C",icon:"💡"},
 {id:"perspective",name:"PERSPECTIVE",color:"#F28C28",icon:"🔭"},
@@ -55,7 +56,6 @@ const TEAMS=[
 {id:"hr",name:"HR",color:"#EC4899",icon:"👥"},
 {id:"finance",name:"FINANCE",color:"#06B6D4",icon:"💰"},
 ];
-
 const DEFAULT_CATS=[
 {id:"performance",name:"ผลสัมฤทธิ์ของงาน",nameEn:"Performance & Output",icon:"📊",criteria:[
 {id:"productivity",name:"ปริมาณงาน",nameEn:"Productivity",desc:"ทำยอดได้ตามเป้า จำนวนชิ้นงาน/โปรเจกต์ที่สำเร็จ"},
@@ -79,658 +79,376 @@ const DEFAULT_CATS=[
 {id:"coaching",name:"การสอนงาน",nameEn:"Coaching & Mentoring",desc:"ให้คำแนะนำ ถ่ายทอดความรู้ พัฒนาลูกน้อง"},
 ]},
 ];
-
 const uid=()=>Math.random().toString(36).slice(2,10);
-
-// ══════ Quarter helpers ══════
 function getCurQ(){const m=new Date().getMonth();return{q:m<3?1:m<6?2:m<9?3:4,y:new Date().getFullYear()};}
-function qLabel(q,y){return`Q${q}/${y}`;}
-function qKey(q,y){return`${y}-Q${q}`;}
+function qLabel(q,y){return"Q"+q+"/"+y;}
 
-// ══════ Firebase hooks ══════
 function useFB(path,fb){
-  const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
-  useEffect(()=>{const ref=db.ref(path);const h=ref.on("value",s=>{setData(s.val()??fb);setLoading(false);});return()=>ref.off("value",h);},[path]);
-  return[data,loading];
+const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
+useEffect(()=>{const ref=db.ref(path);const h=ref.on("value",s=>{setData(s.val()??fb);setLoading(false);});return()=>ref.off("value",h);},[path]);
+return[data,loading];
 }
 function fbSet(p,d){return db.ref(p).set(d);}
 function fbPush(p,d){return db.ref(p).push(d);}
 function fbRemove(p){return db.ref(p).remove();}
 
-// ══════ Small components ══════
 function ScoreInput({value,onChange}){
-  const getColor=v=>{if(v<=2)return"#EF4444";if(v<=4)return"#F97316";if(v<=6)return"#F59E0B";if(v<=8)return"#10B981";return"#3B82F6";};
-  return(
-    <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
-      {[1,2,3,4,5,6,7,8,9,10].map(n=>{
-        const active=value===n;const c=getColor(n);
-        return <button key={n} onClick={()=>onChange(n)} style={{
-          width:30,height:30,borderRadius:7,border:active?`2px solid ${c}`:"1.5px solid #2a2d35",
-          background:active?c+"22":"#1a1d24",color:active?c:"#6b7280",
-          fontWeight:700,fontSize:12,transform:active?"scale(1.1)":"scale(1)",transition:"all .15s",
-        }}>{n}</button>;
-      })}
-    </div>
-  );
+const gc=v=>v<=2?"#EF4444":v<=4?"#F97316":v<=6?"#F59E0B":v<=8?"#10B981":"#3B82F6";
+return(<div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+{[1,2,3,4,5,6,7,8,9,10].map(n=>{const a=value===n,c=gc(n);
+return<button key={n} onClick={()=>onChange(n)} style={{width:30,height:30,borderRadius:7,border:a?"2px solid "+c:"1.5px solid #2a2d35",background:a?c+"22":"#1a1d24",color:a?c:"#6b7280",fontWeight:700,fontSize:12,transform:a?"scale(1.1)":"scale(1)",transition:"all .15s"}}>{n}</button>})}</div>);
 }
 function Badge({children,color="#5B8DEF",style:sx={}}){return<span style={{display:"inline-block",padding:"2px 8px",borderRadius:6,background:color+"18",color,fontSize:10,fontWeight:600,...sx}}>{children}</span>;}
-function Modal({open,onClose,title,children}){
-  if(!open)return null;
-  return(<div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,.55)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-    <div onClick={e=>e.stopPropagation()} style={{background:"#13161c",border:"1px solid #2a2d35",borderRadius:16,padding:24,maxWidth:520,width:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.5)"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
-        <h3 style={{margin:0,fontSize:17,color:"#f0f0f0"}}>{title}</h3>
-        <button onClick={onClose} style={{background:"none",border:"none",color:"#6b7280",fontSize:22}}>✕</button>
-      </div>{children}
-    </div></div>);
-}
-function Alert({color="#F59E0B",icon="⚠️",children}){
-  return <div style={{background:color+"10",border:`1px solid ${color}30`,borderRadius:12,padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"flex-start",gap:10}}>
-    <span style={{fontSize:18,flexShrink:0}}>{icon}</span><div style={{fontSize:12,color:color,lineHeight:1.6}}>{children}</div>
-  </div>;
-}
+function Modal({open,onClose,title,children}){if(!open)return null;return(<div style={{position:"fixed",inset:0,zIndex:999,background:"rgba(0,0,0,.55)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{background:"#13161c",border:"1px solid #2a2d35",borderRadius:16,padding:24,maxWidth:520,width:"100%",maxHeight:"85vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,.5)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}><h3 style={{margin:0,fontSize:17,color:"#f0f0f0"}}>{title}</h3><button onClick={onClose} style={{background:"none",border:"none",color:"#6b7280",fontSize:22}}>✕</button></div>{children}</div></div>);}
+function Alert({color="#F59E0B",icon="⚠️",children}){return<div style={{background:color+"10",border:"1px solid "+color+"30",borderRadius:12,padding:"12px 16px",marginBottom:12,display:"flex",alignItems:"flex-start",gap:10}}><span style={{fontSize:18,flexShrink:0}}>{icon}</span><div style={{fontSize:12,color,lineHeight:1.6}}>{children}</div></div>;}
 
-// ══════ Score helpers ══════
 const calcAvg=sc=>{if(!sc)return 0;const v=Object.values(sc).filter(x=>typeof x==="number"&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;};
 const scoreColor=a=>a>=9?"#3B82F6":a>=7?"#10B981":a>=5?"#F59E0B":a>=3?"#F97316":"#EF4444";
-const scoreLabelTh=a=>a>=9?"ดีเยี่ยม":a>=7?"ดี":a>=5?"ได้มาตรฐาน":a>=3?"ต่ำกว่ามาตรฐาน":"ต้องปรับปรุง";
-
-// ══════ STYLES ══════
+const scoreLbl=a=>a>=9?"ดีเยี่ยม":a>=7?"ดี":a>=5?"ได้มาตรฐาน":a>=3?"ต่ำกว่ามาตรฐาน":"ต้องปรับปรุง";
 const S={
-  card:{background:"#13161c",border:"1px solid #1e2028",borderRadius:14,padding:16,marginBottom:12},
-  btn:(c="#5B8DEF")=>({padding:"9px 18px",borderRadius:10,border:"none",background:c,color:"#fff",fontWeight:600,fontSize:13}),
-  btnO:(c="#5B8DEF")=>({padding:"8px 16px",borderRadius:10,border:`1.5px solid ${c}40`,background:"transparent",color:c,fontWeight:600,fontSize:13}),
-  input:{width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #2a2d35",background:"#1a1d24",color:"#e0e0e0",fontSize:14,fontFamily:"inherit",boxSizing:"border-box"},
-  label:{fontSize:12,fontWeight:600,color:"#8b8fa4",marginBottom:5,display:"block"},
+card:{background:"#13161c",border:"1px solid #1e2028",borderRadius:14,padding:16,marginBottom:12},
+btn:(c="#5B8DEF")=>({padding:"9px 18px",borderRadius:10,border:"none",background:c,color:"#fff",fontWeight:600,fontSize:13}),
+btnO:(c="#5B8DEF")=>({padding:"8px 16px",borderRadius:10,border:"1.5px solid "+c+"40",background:"transparent",color:c,fontWeight:600,fontSize:13}),
+input:{width:"100%",padding:"10px 14px",borderRadius:10,border:"1.5px solid #2a2d35",background:"#1a1d24",color:"#e0e0e0",fontSize:14,fontFamily:"inherit",boxSizing:"border-box"},
+label:{fontSize:12,fontWeight:600,color:"#8b8fa4",marginBottom:5,display:"block"},
 };
 
-// ═══════════════════════════════════════
-// LOGIN SCREEN
-// ═══════════════════════════════════════
+// ══ LOGIN ══
 function LoginScreen(){
-  const[loading,setLoading]=useState(false);
-  const[error,setError]=useState("");
-  const login=async()=>{
-    setLoading(true);setError("");
-    try{await auth.signInWithPopup(window.gProvider);}
-    catch(e){setError("เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง");setLoading(false);}
-  };
-  return(
-    <div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{textAlign:"center",maxWidth:380,width:"100%"}}>
-        <div style={{fontSize:11,fontWeight:700,letterSpacing:3,color:"#5B8DEF",marginBottom:8}}>DEC MEDIA</div>
-        <h1 style={{fontSize:24,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Employee Evaluation</h1>
-        <p style={{fontSize:13,color:"#6b7280",marginBottom:32}}>ระบบประเมินพนักงานประจำไตรมาส</p>
-        <button onClick={login} disabled={loading} style={{...S.btn("#4285F4"),padding:"14px 32px",fontSize:15,display:"flex",alignItems:"center",gap:10,margin:"0 auto",opacity:loading?.6:1}}>
-          <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-          {loading?"กำลังเข้าสู่ระบบ...":"เข้าสู่ระบบด้วย Google"}
-        </button>
-        {error&&<div style={{marginTop:16,color:"#EF4444",fontSize:13}}>{error}</div>}
-      </div>
-    </div>
-  );
+const[ld,setLd]=useState(false);
+return(<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+<div style={{textAlign:"center",maxWidth:380,width:"100%"}}>
+<div style={{fontSize:11,fontWeight:700,letterSpacing:3,color:"#5B8DEF",marginBottom:8}}>DEC MEDIA</div>
+<h1 style={{fontSize:24,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Employee Evaluation</h1>
+<p style={{fontSize:13,color:"#6b7280",marginBottom:32}}>ระบบประเมินพนักงานประจำไตรมาส</p>
+<button onClick={()=>{setLd(true);auth.signInWithRedirect(window.gProvider);}} disabled={ld} style={{...S.btn("#4285F4"),padding:"14px 32px",fontSize:15,display:"flex",alignItems:"center",gap:10,margin:"0 auto",opacity:ld?.6:1}}>
+<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+{ld?"กำลังเปลี่ยนหน้า...":"เข้าสู่ระบบด้วย Google"}</button>
+<p style={{fontSize:11,color:"#4b5060",marginTop:16}}>ระบบจะพาไปหน้า Google เพื่อเข้าสู่ระบบ</p>
+</div></div>);
 }
 
-// ═══════════════════════════════════════
-// MAIN APP
-// ═══════════════════════════════════════
+// ══ MAIN ══
 function App(){
-  const[user,setUser]=useState(undefined); // undefined=loading, null=not logged in
-  useEffect(()=>{const unsub=auth.onAuthStateChanged(u=>setUser(u||null));return unsub;},[]);
-  if(user===undefined)return<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{color:"#6b7280",animation:"pulse 1.5s infinite",fontSize:14}}>กำลังโหลด...</div></div>;
-  if(!user)return<LoginScreen/>;
-  return<MainApp user={user}/>;
+const[user,setUser]=useState(undefined);
+useEffect(()=>{const u=auth.onAuthStateChanged(u=>setUser(u||null));return u;},[]);
+if(user===undefined)return<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{color:"#6b7280",animation:"pulse 1.5s infinite",fontSize:14}}>กำลังโหลด...</div></div>;
+if(!user)return<LoginScreen/>;
+return<MainApp user={user}/>;
 }
 
 function MainApp({user}){
-  // Firebase data
-  const[empObj,empL]=useFB("employees",{});
-  const[evalObj,evalL]=useFB("evaluations",{});
-  const[catData,catL]=useFB("categories",null);
-  const[leadersObj,leadL]=useFB("leaders",{});
-  const[connected,setConnected]=useState(false);
+const[empObj,empL]=useFB("employees",{});
+const[evalObj,evalL]=useFB("evaluations",{});
+const[catData,catL]=useFB("categories",null);
+const[leadersObj,leadL]=useFB("leaders",{});
+const[adminsObj,adminsL]=useFB("admins",{});
+const[connected,setConnected]=useState(false);
 
-  useEffect(()=>{const r=db.ref(".info/connected");const h=r.on("value",s=>setConnected(!!s.val()));return()=>r.off("value",h);},[]);
-  useEffect(()=>{if(!catL&&catData===null)fbSet("categories",DEFAULT_CATS);},[catL,catData]);
+useEffect(()=>{const r=db.ref(".info/connected");const h=r.on("value",s=>setConnected(!!s.val()));return()=>r.off("value",h);},[]);
+useEffect(()=>{if(!catL&&catData===null)fbSet("categories",DEFAULT_CATS);},[catL,catData]);
+// Init super admin in DB on first load
+useEffect(()=>{
+  if(!adminsL){
+    const admins=adminsObj||{};
+    const emails=Object.values(admins).map(a=>a.email);
+    if(!emails.includes(SUPER_ADMIN)){
+      fbPush("admins",{email:SUPER_ADMIN,name:"Super Admin",addedAt:Date.now()});
+    }
+  }
+},[adminsL,adminsObj]);
 
-  const employees=empObj?Object.entries(empObj).map(([k,v])=>({...v,_key:k})):[];
-  const evaluations=evalObj?Object.entries(evalObj).map(([k,v])=>({...v,_key:k})):[];
-  const cats=catData?(Array.isArray(catData)?catData:Object.values(catData)):DEFAULT_CATS;
-  const leaders=leadersObj||{};
-  const loading=empL||evalL||catL||leadL;
+const employees=empObj?Object.entries(empObj).map(([k,v])=>({...v,_key:k})):[];
+const evaluations=evalObj?Object.entries(evalObj).map(([k,v])=>({...v,_key:k})):[];
+const cats=catData?(Array.isArray(catData)?catData:Object.values(catData)):DEFAULT_CATS;
+const leaders=leadersObj||{};
+const admins=adminsObj||{};
+const loading=empL||evalL||catL||leadL||adminsL;
 
-  // ══ Role detection ══
-  const isAdmin=ADMIN_EMAILS.includes(user.email);
-  const myTeams=Object.entries(leaders).filter(([_,v])=>v.email===user.email).map(([_,v])=>v.teamId);
-  const isLeader=myTeams.length>0;
-  const accessibleTeams=isAdmin?TEAMS.map(t=>t.id):myTeams;
+// ══ Role ══
+const adminEmails=Object.values(admins).map(a=>a.email?.toLowerCase());
+const isAdmin=adminEmails.includes(user.email?.toLowerCase())||user.email?.toLowerCase()===SUPER_ADMIN;
+const isSuperAdmin=user.email?.toLowerCase()===SUPER_ADMIN;
+const myTeams=Object.entries(leaders).filter(([_,v])=>v.email?.toLowerCase()===user.email?.toLowerCase()).map(([_,v])=>v.teamId);
+const isLeader=myTeams.length>0;
+const accessTeams=isAdmin?TEAMS.map(t=>t.id):myTeams;
 
-  // ══ State ══
-  const[view,setView]=useState("dashboard");
-  const[selTeam,setSelTeam]=useState(null);
-  const[evalTarget,setEvalTarget]=useState(null);
-  const[viewResult,setViewResult]=useState(null);
-  const[sidebarOpen,setSidebarOpen]=useState(false);
-  const[showAddEmp,setShowAddEmp]=useState(false);
-  const[showAddCat,setShowAddCat]=useState(false);
-  const[showAddCrit,setShowAddCrit]=useState(null);
-  const[showAddLeader,setShowAddLeader]=useState(false);
-  const[newEmp,setNewEmp]=useState({name:"",team:"",role:"",isLeader:false});
-  const[newCat,setNewCat]=useState({name:"",nameEn:"",icon:"📋"});
-  const[newCrit,setNewCrit]=useState({name:"",nameEn:"",desc:""});
-  const[newLeader,setNewLeader]=useState({email:"",teamId:""});
-  const[evalScores,setEvalScores]=useState({});
-  const[evalNote,setEvalNote]=useState("");
-  const[saving,setSaving]=useState(false);
-  const[selYear,setSelYear]=useState(getCurQ().y);
+const[view,setView]=useState("dashboard");
+const[selTeam,setSelTeam]=useState(null);
+const[evalTarget,setEvalTarget]=useState(null);
+const[viewResult,setViewResult]=useState(null);
+const[sidebarOpen,setSidebarOpen]=useState(false);
+const[showAddEmp,setShowAddEmp]=useState(false);
+const[showAddCat,setShowAddCat]=useState(false);
+const[showAddCrit,setShowAddCrit]=useState(null);
+const[showAddLeader,setShowAddLeader]=useState(false);
+const[showAddAdmin,setShowAddAdmin]=useState(false);
+const[newEmp,setNewEmp]=useState({name:"",team:"",role:"",isLeader:false});
+const[newCat,setNewCat]=useState({name:"",nameEn:"",icon:"📋"});
+const[newCrit,setNewCrit]=useState({name:"",nameEn:"",desc:""});
+const[newLeader,setNewLeader]=useState({email:"",teamId:""});
+const[newAdmin,setNewAdmin]=useState({email:"",name:""});
+const[evalScores,setEvalScores]=useState({});
+const[evalNote,setEvalNote]=useState("");
+const[saving,setSaving]=useState(false);
+const[selYear,setSelYear]=useState(getCurQ().y);
 
-  const nav=(v,t=null)=>{setView(v);setSelTeam(t);setSidebarOpen(false);};
-  const{q:curQ,y:curY}=getCurQ();
+const nav=(v,t=null)=>{setView(v);setSelTeam(t);setSidebarOpen(false);};
+const{q:curQ,y:curY}=getCurQ();
 
-  // ══ Accessible employees ══
-  const visibleEmployees=isAdmin?employees:employees.filter(e=>accessibleTeams.includes(e.team));
-  const teamEmps=selTeam?visibleEmployees.filter(e=>e.team===selTeam.id):[];
-  const getTeam=id=>TEAMS.find(t=>t.id===id);
+const visEmps=isAdmin?employees:employees.filter(e=>accessTeams.includes(e.team));
+const teamEmps=selTeam?visEmps.filter(e=>e.team===selTeam.id):[];
+const getTeam=id=>TEAMS.find(t=>t.id===id);
+const getEvalQ=(eid,q,y)=>evaluations.find(e=>e.employeeId===eid&&e.quarter===q&&e.year===y);
+const getEvalsYear=(eid,y)=>evaluations.filter(e=>e.employeeId===eid&&e.year===y);
+const calcYearAvg=(eid,y)=>{const evs=getEvalsYear(eid,y);if(!evs.length)return 0;const avgs=evs.map(e=>calcAvg(e.scores)).filter(a=>a>0);return avgs.length?avgs.reduce((a,b)=>a+b,0)/avgs.length:0;};
+const pendingEvals=useMemo(()=>visEmps.filter(emp=>!getEvalQ(emp.id,curQ,curY)),[visEmps,evaluations,curQ,curY]);
 
-  // ══ Quarter eval check ══
-  const getEvalForQ=(empId,q,y)=>evaluations.find(e=>e.employeeId===empId&&e.quarter===q&&e.year===y);
-  const getEvalsForYear=(empId,y)=>evaluations.filter(e=>e.employeeId===empId&&e.year===y);
-  const calcYearAvg=(empId,y)=>{
-    const evs=getEvalsForYear(empId,y);
-    if(!evs.length)return 0;
-    const avgs=evs.map(e=>calcAvg(e.scores)).filter(a=>a>0);
-    return avgs.length?avgs.reduce((a,b)=>a+b,0)/avgs.length:0;
-  };
+// CRUD
+const addEmployee=async()=>{const team=newEmp.team||selTeam?.id||"";if(!newEmp.name.trim()||!team)return;setSaving(true);await fbPush("employees",{id:uid(),name:newEmp.name.trim(),team,role:newEmp.role.trim(),isLeader:newEmp.isLeader,createdAt:Date.now()});setNewEmp({name:"",team:"",role:"",isLeader:false});setShowAddEmp(false);setSaving(false);};
+const removeEmployee=async emp=>{if(!confirm("ลบพนักงานคนนี้?"))return;await fbRemove("employees/"+emp._key);evaluations.filter(e=>e.employeeId===emp.id).forEach(ev=>fbRemove("evaluations/"+ev._key));};
+const startEval=emp=>{setEvalTarget(emp);setEvalScores({});setEvalNote("");setView("evaluate");setSidebarOpen(false);};
+const submitEval=async()=>{if(!evalTarget)return;setSaving(true);await fbPush("evaluations",{id:uid(),employeeId:evalTarget.id,scores:{...evalScores},note:evalNote,quarter:curQ,year:curY,date:Date.now(),evaluatedBy:user.email});setSaving(false);setView("team");};
+const addCategory=async()=>{if(!newCat.name.trim())return;setSaving(true);await fbSet("categories",[...cats,{id:uid(),name:newCat.name.trim(),nameEn:newCat.nameEn.trim(),icon:newCat.icon||"📋",criteria:[]}]);setNewCat({name:"",nameEn:"",icon:"📋"});setShowAddCat(false);setSaving(false);};
+const removeCat=async id=>{if(!confirm("ลบหมวดนี้?"))return;await fbSet("categories",cats.filter(c=>c.id!==id));};
+const addCriteria=async()=>{if(!newCrit.name.trim()||!showAddCrit)return;setSaving(true);await fbSet("categories",cats.map(c=>c.id===showAddCrit?{...c,criteria:[...(c.criteria||[]),{id:uid(),name:newCrit.name.trim(),nameEn:newCrit.nameEn.trim(),desc:newCrit.desc.trim()}]}:c));setNewCrit({name:"",nameEn:"",desc:""});setShowAddCrit(null);setSaving(false);};
+const removeCriteria=async(ci,cri)=>{await fbSet("categories",cats.map(c=>c.id===ci?{...c,criteria:(c.criteria||[]).filter(cr=>cr.id!==cri)}:c));};
+const addLeader=async()=>{if(!newLeader.email.trim()||!newLeader.teamId)return;setSaving(true);await fbPush("leaders",{email:newLeader.email.trim().toLowerCase(),teamId:newLeader.teamId});setNewLeader({email:"",teamId:""});setShowAddLeader(false);setSaving(false);};
+const removeLeader=async k=>{if(!confirm("ลบหัวหน้าทีมนี้?"))return;await fbRemove("leaders/"+k);};
+const addAdmin=async()=>{if(!newAdmin.email.trim())return;setSaving(true);await fbPush("admins",{email:newAdmin.email.trim().toLowerCase(),name:newAdmin.name.trim()||"Admin",addedAt:Date.now()});setNewAdmin({email:"",name:""});setShowAddAdmin(false);setSaving(false);};
+const removeAdmin=async(k,email)=>{if(email.toLowerCase()===SUPER_ADMIN){alert("ไม่สามารถลบ Super Admin ได้");return;}if(!confirm("ลบ Admin คนนี้?"))return;await fbRemove("admins/"+k);};
 
-  // ══ Pending evaluations for current quarter ══
-  const pendingEvals=useMemo(()=>{
-    return visibleEmployees.filter(emp=>!getEvalForQ(emp.id,curQ,curY));
-  },[visibleEmployees,evaluations,curQ,curY]);
+const visTeams=TEAMS.filter(t=>accessTeams.includes(t.id));
 
-  // ══ CRUD ══
-  const addEmployee=async()=>{
-    const team=newEmp.team||selTeam?.id||"";if(!newEmp.name.trim()||!team)return;
-    setSaving(true);
-    await fbPush("employees",{id:uid(),name:newEmp.name.trim(),team,role:newEmp.role.trim(),isLeader:newEmp.isLeader,createdAt:Date.now()});
-    setNewEmp({name:"",team:"",role:"",isLeader:false});setShowAddEmp(false);setSaving(false);
-  };
-  const removeEmployee=async emp=>{if(!confirm("ลบพนักงานคนนี้?"))return;await fbRemove(`employees/${emp._key}`);evaluations.filter(e=>e.employeeId===emp.id).forEach(ev=>fbRemove(`evaluations/${ev._key}`));};
-  const startEval=emp=>{setEvalTarget(emp);setEvalScores({});setEvalNote("");setView("evaluate");setSidebarOpen(false);};
-  const submitEval=async()=>{
-    if(!evalTarget)return;setSaving(true);
-    await fbPush("evaluations",{id:uid(),employeeId:evalTarget.id,scores:{...evalScores},note:evalNote,quarter:curQ,year:curY,date:Date.now(),evaluatedBy:user.email});
-    setSaving(false);setView("team");
-  };
-  const addCategory=async()=>{if(!newCat.name.trim())return;setSaving(true);await fbSet("categories",[...cats,{id:uid(),name:newCat.name.trim(),nameEn:newCat.nameEn.trim(),icon:newCat.icon||"📋",criteria:[]}]);setNewCat({name:"",nameEn:"",icon:"📋"});setShowAddCat(false);setSaving(false);};
-  const removeCat=async id=>{if(!confirm("ลบหมวดนี้?"))return;await fbSet("categories",cats.filter(c=>c.id!==id));};
-  const addCriteria=async()=>{if(!newCrit.name.trim()||!showAddCrit)return;setSaving(true);await fbSet("categories",cats.map(c=>c.id===showAddCrit?{...c,criteria:[...(c.criteria||[]),{id:uid(),name:newCrit.name.trim(),nameEn:newCrit.nameEn.trim(),desc:newCrit.desc.trim()}]}:c));setNewCrit({name:"",nameEn:"",desc:""});setShowAddCrit(null);setSaving(false);};
-  const removeCriteria=async(catId,critId)=>{await fbSet("categories",cats.map(c=>c.id===catId?{...c,criteria:(c.criteria||[]).filter(cr=>cr.id!==critId)}:c));};
-  const addLeader=async()=>{
-    if(!newLeader.email.trim()||!newLeader.teamId)return;setSaving(true);
-    await fbPush("leaders",{email:newLeader.email.trim().toLowerCase(),teamId:newLeader.teamId});
-    setNewLeader({email:"",teamId:""});setShowAddLeader(false);setSaving(false);
-  };
-  const removeLeader=async key=>{if(!confirm("ลบหัวหน้าทีมนี้?"))return;await fbRemove(`leaders/${key}`);};
+if(loading)return<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#6b7280"}}><div style={{fontSize:32,marginBottom:12,animation:"pulse 1.5s infinite"}}>🔄</div><div>กำลังเชื่อมต่อ...</div></div></div>;
 
-  const visibleTeams=TEAMS.filter(t=>accessibleTeams.includes(t.id));
+if(!isAdmin&&!isLeader)return(<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div style={{textAlign:"center",maxWidth:400}}><div style={{fontSize:48,marginBottom:16}}>🔒</div><h2 style={{fontSize:18,color:"#f0f0f0",marginBottom:8}}>ไม่มีสิทธิ์เข้าใช้งาน</h2><p style={{fontSize:13,color:"#6b7280",marginBottom:4}}>บัญชี {user.email} ยังไม่ได้รับสิทธิ์</p><p style={{fontSize:12,color:"#4b5060",marginBottom:24}}>กรุณาติดต่อ Admin เพื่อเพิ่มสิทธิ์</p><button onClick={()=>auth.signOut()} style={S.btnO("#EF4444")}>ออกจากระบบ</button></div></div>);
 
-  if(loading)return<div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:"#6b7280"}}><div style={{fontSize:32,marginBottom:12,animation:"pulse 1.5s infinite"}}>🔄</div><div>กำลังเชื่อมต่อ...</div></div></div>;
+return(
+<div>
+<style>{`@media(max-width:768px){.mobile-header{display:flex!important;}}`}</style>
 
-  // ══ No access ══
-  if(!isAdmin&&!isLeader)return(
-    <div style={{minHeight:"100vh",background:"#0c0e13",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{textAlign:"center",maxWidth:400}}>
-        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
-        <h2 style={{fontSize:18,color:"#f0f0f0",marginBottom:8}}>ไม่มีสิทธิ์เข้าใช้งาน</h2>
-        <p style={{fontSize:13,color:"#6b7280",marginBottom:4}}>บัญชี {user.email} ยังไม่ได้รับสิทธิ์</p>
-        <p style={{fontSize:12,color:"#4b5060",marginBottom:24}}>กรุณาติดต่อ Admin เพื่อเพิ่มสิทธิ์หัวหน้าทีม</p>
-        <button onClick={()=>auth.signOut()} style={S.btnO("#EF4444")}>ออกจากระบบ</button>
-      </div>
-    </div>
-  );
+{/* SIDEBAR */}
+<div className={`sidebar-overlay ${sidebarOpen?"open":""}`} onClick={()=>setSidebarOpen(false)}/>
+<div className={`desktop-sidebar ${sidebarOpen?"open":""}`} style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#101318",borderRight:"1px solid #1e2028",display:"flex",flexDirection:"column",zIndex:20,overflowY:"auto"}}>
+<div style={{padding:"20px 16px 14px",borderBottom:"1px solid #1e2028"}}>
+<div style={{fontSize:10,fontWeight:700,letterSpacing:2,color:"#5B8DEF",marginBottom:3}}>DEC MEDIA</div>
+<div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Employee Evaluation</div>
+<div style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:connected?"#10B98114":"#EF444414",fontSize:10,fontWeight:600,color:connected?"#10B981":"#EF4444",marginBottom:8}}><span style={{width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444"}}/>{connected?"Online":"กำลังเชื่อมต่อ..."}</div>
+<div style={{display:"flex",alignItems:"center",gap:8}}>
+<img src={user.photoURL} style={{width:28,height:28,borderRadius:8}} referrerPolicy="no-referrer"/>
+<div style={{flex:1,minWidth:0}}><div style={{fontSize:11,fontWeight:600,color:"#e0e0e0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.displayName}</div><Badge color={isAdmin?"#E8453C":"#5B8DEF"}>{isAdmin?"Admin":"หัวหน้าทีม"}</Badge></div>
+</div></div>
 
-  return(
-  <div>
-    <style>{`@media(max-width:768px){.mobile-header{display:flex!important;}}`}</style>
+<div style={{padding:"12px 10px 6px"}}>
+{[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"yearly",icon:"📅",label:"สรุปรายปี"},
+...(isAdmin?[{id:"manage_admins",icon:"🛡️",label:"จัดการ Admin"},{id:"manage_leaders",icon:"👑",label:"จัดการหัวหน้าทีม"},{id:"settings",icon:"⚙️",label:"ตั้งค่าหัวข้อ"}]:[])
+].map(n=>(
+<button key={n.id} onClick={()=>nav(n.id)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"9px 11px",borderRadius:10,border:"none",background:view===n.id&&!selTeam?"#5B8DEF18":"transparent",color:view===n.id&&!selTeam?"#5B8DEF":"#8b8fa4",fontSize:13,fontWeight:600,marginBottom:2,textAlign:"left"}}><span style={{fontSize:15}}>{n.icon}</span>{n.label}</button>
+))}
+</div>
 
-    {/* ══ SIDEBAR ══ */}
-    <div className={`sidebar-overlay ${sidebarOpen?"open":""}`} onClick={()=>setSidebarOpen(false)}/>
-    <div className={`desktop-sidebar ${sidebarOpen?"open":""}`} style={{position:"fixed",left:0,top:0,bottom:0,width:240,background:"#101318",borderRight:"1px solid #1e2028",display:"flex",flexDirection:"column",zIndex:20,overflowY:"auto"}}>
-      <div style={{padding:"20px 16px 14px",borderBottom:"1px solid #1e2028"}}>
-        <div style={{fontSize:10,fontWeight:700,letterSpacing:2,color:"#5B8DEF",marginBottom:3}}>DEC MEDIA</div>
-        <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Employee Evaluation</div>
-        <div style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:connected?"#10B98114":"#EF444414",fontSize:10,fontWeight:600,color:connected?"#10B981":"#EF4444",marginBottom:8}}>
-          <span style={{width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444"}}/>
-          {connected?"Online":"กำลังเชื่อมต่อ..."}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <img src={user.photoURL} style={{width:28,height:28,borderRadius:8}} referrerPolicy="no-referrer"/>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#e0e0e0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.displayName}</div>
-            <Badge color={isAdmin?"#E8453C":"#5B8DEF"}>{isAdmin?"Admin":"หัวหน้าทีม"}</Badge>
-          </div>
-        </div>
-      </div>
+<div style={{padding:"6px 10px"}}>
+<div style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:"#4b5060",padding:"6px 11px 5px",textTransform:"uppercase"}}>Teams</div>
+{visTeams.map(t=>{const cnt=employees.filter(e=>e.team===t.id).length;const pend=employees.filter(e=>e.team===t.id&&!getEvalQ(e.id,curQ,curY)).length;
+return(<button key={t.id} onClick={()=>nav("team",t)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"8px 11px",borderRadius:10,border:"none",background:selTeam?.id===t.id?t.color+"18":"transparent",color:selTeam?.id===t.id?t.color:"#8b8fa4",fontSize:12,fontWeight:600,marginBottom:1,textAlign:"left"}}>
+<span style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:13}}>{t.icon}</span>{t.name}</span>
+<span style={{display:"flex",gap:4}}>{pend>0&&<span style={{fontSize:9,fontWeight:700,background:"#EF444422",color:"#EF4444",padding:"2px 6px",borderRadius:5}}>{pend}</span>}{cnt>0&&<span style={{fontSize:9,fontWeight:700,background:t.color+"22",color:t.color,padding:"2px 6px",borderRadius:5}}>{cnt}</span>}</span>
+</button>);})}
+</div>
 
-      <div style={{padding:"12px 10px 6px"}}>
-        {[{id:"dashboard",icon:"📊",label:"Dashboard"},{id:"yearly",icon:"📅",label:"สรุปรายปี"},
-          ...(isAdmin?[{id:"manage_leaders",icon:"👑",label:"จัดการหัวหน้าทีม"},{id:"settings",icon:"⚙️",label:"ตั้งค่าหัวข้อ"}]:[])
-        ].map(n=>(
-          <button key={n.id} onClick={()=>nav(n.id)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"9px 11px",borderRadius:10,border:"none",background:view===n.id&&!selTeam?"#5B8DEF18":"transparent",color:view===n.id&&!selTeam?"#5B8DEF":"#8b8fa4",fontSize:13,fontWeight:600,marginBottom:2,textAlign:"left"}}><span style={{fontSize:15}}>{n.icon}</span>{n.label}</button>
-        ))}
-      </div>
+<div style={{marginTop:"auto",padding:"12px 16px",borderTop:"1px solid #1e2028"}}><button onClick={()=>auth.signOut()} style={{...S.btnO("#6b7280"),width:"100%",fontSize:12,padding:"8px 12px"}}>ออกจากระบบ</button></div>
+</div>
 
-      <div style={{padding:"6px 10px"}}>
-        <div style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:"#4b5060",padding:"6px 11px 5px",textTransform:"uppercase"}}>Teams</div>
-        {visibleTeams.map(t=>{
-          const cnt=employees.filter(e=>e.team===t.id).length;
-          const pending=employees.filter(e=>e.team===t.id&&!getEvalForQ(e.id,curQ,curY)).length;
-          return(
-            <button key={t.id} onClick={()=>nav("team",t)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"8px 11px",borderRadius:10,border:"none",background:selTeam?.id===t.id?t.color+"18":"transparent",color:selTeam?.id===t.id?t.color:"#8b8fa4",fontSize:12,fontWeight:600,marginBottom:1,textAlign:"left"}}>
-              <span style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:13}}>{t.icon}</span>{t.name}</span>
-              <span style={{display:"flex",gap:4}}>
-                {pending>0&&<span style={{fontSize:9,fontWeight:700,background:"#EF444422",color:"#EF4444",padding:"2px 6px",borderRadius:5}}>{pending}</span>}
-                {cnt>0&&<span style={{fontSize:9,fontWeight:700,background:t.color+"22",color:t.color,padding:"2px 6px",borderRadius:5}}>{cnt}</span>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+{/* Mobile */}
+<div className="mobile-header" style={{display:"none",padding:"12px 16px",background:"#101318",borderBottom:"1px solid #1e2028",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:15}}>
+<button onClick={()=>setSidebarOpen(true)} style={{background:"none",border:"none",color:"#e0e0e0",fontSize:22,padding:4}}>☰</button>
+<div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#5B8DEF"}}>DEC MEDIA</span><span style={{width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444"}}/></div>
+<img src={user.photoURL} style={{width:28,height:28,borderRadius:8}} referrerPolicy="no-referrer"/>
+</div>
 
-      <div style={{marginTop:"auto",padding:"12px 16px",borderTop:"1px solid #1e2028"}}>
-        <button onClick={()=>auth.signOut()} style={{...S.btnO("#6b7280"),width:"100%",fontSize:12,padding:"8px 12px"}}>ออกจากระบบ</button>
-      </div>
-    </div>
+<div className="main-content" style={{marginLeft:240,padding:"24px 28px",minHeight:"100vh"}}>
 
-    {/* Mobile Header */}
-    <div className="mobile-header" style={{display:"none",padding:"12px 16px",background:"#101318",borderBottom:"1px solid #1e2028",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:15}}>
-      <button onClick={()=>setSidebarOpen(true)} style={{background:"none",border:"none",color:"#e0e0e0",fontSize:22,padding:4}}>☰</button>
-      <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:"#5B8DEF"}}>DEC MEDIA</span><span style={{width:6,height:6,borderRadius:"50%",background:connected?"#10B981":"#EF4444"}}/></div>
-      <img src={user.photoURL} style={{width:28,height:28,borderRadius:8}} referrerPolicy="no-referrer"/>
-    </div>
+{/* DASHBOARD */}
+{view==="dashboard"&&(<div style={{animation:"slideUp .3s ease"}}>
+<h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>Dashboard</h2>
+<p style={{color:"#6b7280",fontSize:12,marginBottom:16}}>รอบปัจจุบัน: <strong style={{color:"#5B8DEF"}}>{qLabel(curQ,curY)}</strong></p>
+{pendingEvals.length>0&&<Alert color="#F59E0B" icon="⏰"><strong>เตือน!</strong> ยังมีพนักงาน <strong>{pendingEvals.length} คน</strong> ที่ยังไม่ได้ประเมินใน {qLabel(curQ,curY)}</Alert>}
+<div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
+{[{label:"พนักงานทั้งหมด",value:visEmps.length,icon:"👤",color:"#5B8DEF"},{label:"ประเมินแล้ว "+qLabel(curQ,curY),value:visEmps.length-pendingEvals.length,icon:"✅",color:"#10B981"},{label:"รอประเมิน",value:pendingEvals.length,icon:"⏳",color:"#F59E0B"},{label:"ประเมินทั้งหมด",value:evaluations.length,icon:"📝",color:"#A855F7"}].map((s,i)=>(
+<div key={i} style={{...S.card,display:"flex",alignItems:"center",gap:12}}><div style={{width:40,height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,background:s.color+"14",flexShrink:0}}>{s.icon}</div><div><div style={{fontSize:20,fontWeight:700,color:"#f0f0f0"}}>{s.value}</div><div style={{fontSize:10,color:"#6b7280"}}>{s.label}</div></div></div>))}
+</div>
+<h3 style={{fontSize:14,fontWeight:700,color:"#c0c4d0",marginBottom:12}}>ภาพรวมแต่ละทีม</h3>
+<div className="team-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+{visTeams.map(t=>{const te=employees.filter(e=>e.team===t.id);const done=te.filter(e=>getEvalQ(e.id,curQ,curY)).length;const tevs=evaluations.filter(ev=>ev.quarter===curQ&&ev.year===curY&&te.some(e=>e.id===ev.employeeId));const avg=tevs.length?tevs.reduce((s,ev)=>s+calcAvg(ev.scores),0)/tevs.length:0;
+return(<div key={t.id} style={{...S.card,cursor:"pointer"}} onClick={()=>nav("team",t)}>
+<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span style={{fontSize:20}}>{t.icon}</span><div><div style={{fontSize:12,fontWeight:700,color:t.color}}>{t.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{te.length} คน • {done}/{te.length} ประเมินแล้ว</div></div></div>
+{avg>0?(<div><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontSize:10,color:"#6b7280"}}>เฉลี่ย {qLabel(curQ,curY)}</span><span style={{fontSize:13,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</span></div><div style={{height:4,background:"#1e2028",borderRadius:3}}><div style={{height:"100%",width:(avg/10)*100+"%",background:scoreColor(avg),borderRadius:3}}/></div></div>):<div style={{fontSize:10,color:"#4b5060"}}>ยังไม่มีการประเมิน</div>}
+</div>);})}
+</div></div>)}
 
-    <div className="main-content" style={{marginLeft:240,padding:"24px 28px",minHeight:"100vh"}}>
+{/* TEAM */}
+{view==="team"&&selTeam&&(<div style={{animation:"slideUp .3s ease"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
+<div><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{fontSize:24}}>{selTeam.icon}</span><h2 style={{fontSize:20,fontWeight:700,color:selTeam.color,margin:0}}>{selTeam.name}</h2><Badge color="#5B8DEF">{qLabel(curQ,curY)}</Badge></div><p style={{color:"#6b7280",fontSize:12}}>{teamEmps.length} พนักงาน</p></div>
+{isAdmin&&<button onClick={()=>{setNewEmp({name:"",team:selTeam.id,role:"",isLeader:false});setShowAddEmp(true);}} style={S.btn(selTeam.color)}>+ เพิ่มพนักงาน</button>}
+</div>
+{(()=>{const p=teamEmps.filter(e=>!getEvalQ(e.id,curQ,curY));return p.length>0?<Alert color="#F59E0B" icon="⏰">ยังเหลือ <strong>{p.length} คน</strong> ที่ยังไม่ได้ประเมินในรอบ {qLabel(curQ,curY)}</Alert>:teamEmps.length>0?<Alert color="#10B981" icon="✅">ประเมินครบทุกคนในรอบ {qLabel(curQ,curY)} แล้ว!</Alert>:null;})()}
+{teamEmps.length===0?<div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}><div style={{fontSize:40,marginBottom:10,opacity:.5}}>👤</div><div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มีพนักงาน</div></div>
+:teamEmps.map(emp=>{const ev=getEvalQ(emp.id,curQ,curY);const avg=ev?calcAvg(ev.scores):0;const done=!!ev;
+return(<div key={emp._key} className="emp-row" style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between",borderLeft:done?"3px solid #10B981":"3px solid #F59E0B"}}>
+<div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:40,height:40,borderRadius:10,background:selTeam.color+"18",color:selTeam.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>{emp.name.charAt(0)}</div><div><div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{emp.name}{emp.isLeader&&<Badge color="#F59E0B" style={{marginLeft:6}}>หัวหน้า</Badge>}</div><div style={{fontSize:11,color:"#6b7280"}}>{emp.role||"ไม่ระบุ"}</div><div style={{fontSize:10,color:done?"#10B981":"#F59E0B",marginTop:2}}>{done?"✓ ประเมินแล้ว "+qLabel(curQ,curY):"⏳ รอประเมิน "+qLabel(curQ,curY)}</div></div></div>
+<div className="emp-actions" style={{display:"flex",alignItems:"center",gap:8}}>
+{avg>0&&<div style={{textAlign:"right",marginRight:4}}><div style={{fontSize:16,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:"#6b7280"}}>{qLabel(curQ,curY)}</div></div>}
+<button onClick={()=>{setViewResult(emp);setView("results");}} style={S.btnO("#A855F7")}>ดูผล</button>
+{!done&&<button onClick={()=>startEval(emp)} style={S.btn(selTeam.color)}>ประเมิน</button>}
+{done&&<button onClick={()=>startEval(emp)} style={S.btnO(selTeam.color)}>ประเมินซ้ำ</button>}
+{isAdmin&&<button onClick={()=>removeEmployee(emp)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>}
+</div></div>);})}
+</div>)}
 
-    {/* ═══ DASHBOARD ═══ */}
-    {view==="dashboard"&&(
-      <div style={{animation:"slideUp .3s ease"}}>
-        <h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>Dashboard</h2>
-        <p style={{color:"#6b7280",fontSize:12,marginBottom:16}}>รอบปัจจุบัน: <strong style={{color:"#5B8DEF"}}>{qLabel(curQ,curY)}</strong></p>
+{/* EVALUATE */}
+{view==="evaluate"&&evalTarget&&(<div style={{animation:"slideUp .3s ease",maxWidth:680}}>
+<button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
+<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+<div style={{width:44,height:44,borderRadius:12,background:(getTeam(evalTarget.team)?.color||"#5B8DEF")+"18",color:getTeam(evalTarget.team)?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,flexShrink:0}}>{evalTarget.name.charAt(0)}</div>
+<div><h2 style={{fontSize:18,fontWeight:700,color:"#f0f0f0",margin:0}}>ประเมิน: {evalTarget.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{evalTarget.role} • {getTeam(evalTarget.team)?.name} • <strong style={{color:"#5B8DEF"}}>{qLabel(curQ,curY)}</strong></div></div></div>
+{getEvalQ(evalTarget.id,curQ,curY)&&<Alert color="#F97316" icon="⚠️">พนักงานคนนี้ถูกประเมินใน {qLabel(curQ,curY)} แล้ว การบันทึกจะเป็นการ<strong>เพิ่ม</strong>อีกครั้ง</Alert>}
+<div style={{...S.card,display:"flex",gap:10,flexWrap:"wrap",padding:"12px 16px",marginBottom:6}}>
+<span style={{fontSize:10,color:"#6b7280",fontWeight:600}}>เกณฑ์ (เต็ม 10):</span>
+<span style={{fontSize:10,color:"#EF4444",fontWeight:600}}>1-2 ต้องปรับปรุง</span><span style={{fontSize:10,color:"#F97316",fontWeight:600}}>3-4 ต่ำกว่ามาตรฐาน</span><span style={{fontSize:10,color:"#F59E0B",fontWeight:600}}>5-6 ได้มาตรฐาน</span><span style={{fontSize:10,color:"#10B981",fontWeight:600}}>7-8 ดี</span><span style={{fontSize:10,color:"#3B82F6",fontWeight:600}}>9-10 ดีเยี่ยม</span>
+</div>
+{cats.filter(cat=>cat.id!=="leadership"||evalTarget.isLeader).map(cat=>(<div key={cat.id} style={S.card}>
+<div style={{display:"flex",alignItems:"center",gap:7,marginBottom:14}}><span style={{fontSize:16}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:10,color:"#6b7280"}}>{cat.nameEn}</span></div>
+{(cat.criteria||[]).map(cr=>(<div key={cr.id} className="score-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid #1e2028",gap:8}}>
+<div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{cr.desc}</div></div>
+<ScoreInput value={evalScores[cr.id]||0} onChange={v=>setEvalScores({...evalScores,[cr.id]:v})}/></div>))}
+</div>))}
+<div style={S.card}><label style={S.label}>หมายเหตุ</label><textarea value={evalNote} onChange={e=>setEvalNote(e.target.value)} placeholder="เพิ่มความคิดเห็น..." style={{...S.input,minHeight:70,resize:"vertical"}}/></div>
+<div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}><button onClick={()=>setView("team")} style={S.btnO("#6b7280")}>ยกเลิก</button><button onClick={submitEval} disabled={saving} style={S.btn("#10B981")}>{saving?"กำลังบันทึก...":"✓ บันทึก"}</button></div>
+</div>)}
 
-        {/* Reminder */}
-        {pendingEvals.length>0&&(
-          <Alert color="#F59E0B" icon="⏰">
-            <strong>เตือน!</strong> ยังมีพนักงาน <strong>{pendingEvals.length} คน</strong> ที่ยังไม่ได้ประเมินใน {qLabel(curQ,curY)}
-            {!isAdmin&&<span> (ทีมของคุณ)</span>}
-          </Alert>
-        )}
+{/* RESULTS */}
+{view==="results"&&viewResult&&(()=>{
+const allEvs=evaluations.filter(e=>e.employeeId===viewResult.id).sort((a,b)=>b.date-a.date);const team=getTeam(viewResult.team);const ya=calcYearAvg(viewResult.id,curY);
+return(<div style={{animation:"slideUp .3s ease",maxWidth:680}}>
+<button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
+<div style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+<div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:48,height:48,borderRadius:12,background:(team?.color||"#5B8DEF")+"18",color:team?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700}}>{viewResult.name.charAt(0)}</div><div><h2 style={{fontSize:16,fontWeight:700,color:"#f0f0f0",margin:0}}>{viewResult.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{viewResult.role} • {team?.name}</div></div></div>
+<div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#6b7280",marginBottom:2}}>เฉลี่ยรวมปี {curY}</div><div style={{fontSize:28,fontWeight:700,color:ya>0?scoreColor(ya):"#4b5060"}}>{ya>0?ya.toFixed(2):"-"}</div><div style={{fontSize:10,color:ya>0?scoreColor(ya):"#4b5060"}}>{ya>0?scoreLbl(ya):"ยังไม่มีข้อมูล"}</div></div></div>
+<div style={S.card}><div style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:12}}>ผลรายไตรมาส ปี {curY}</div>
+<div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>{[1,2,3,4].map(q=>{const ev=getEvalQ(viewResult.id,q,curY);const avg=ev?calcAvg(ev.scores):0;const ic=q===curQ;
+return(<div key={q} style={{background:ic?"#5B8DEF08":"#0c0e13",border:"1px solid "+(ic?"#5B8DEF30":"#1e2028"),borderRadius:10,padding:12,textAlign:"center"}}>
+<div style={{fontSize:11,fontWeight:700,color:ic?"#5B8DEF":"#6b7280",marginBottom:6}}>Q{q}</div>
+{avg>0?<><div style={{fontSize:20,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:scoreColor(avg)}}>{scoreLbl(avg)}</div></>:<><div style={{fontSize:20,color:"#2a2d35"}}>-</div><div style={{fontSize:9,color:"#4b5060"}}>{ic?"รอประเมิน":"ไม่มีข้อมูล"}</div></>}
+</div>);})}</div></div>
+{allEvs.length>0&&(()=>{const latest=allEvs[0];return(<>
+<div style={{fontSize:13,fontWeight:700,color:"#c0c4d0",marginBottom:8,marginTop:4}}>รายละเอียดล่าสุด — {qLabel(latest.quarter,latest.year)}</div>
+{cats.filter(cat=>cat.id!=="leadership"||viewResult.isLeader).map(cat=>{const cs=(cat.criteria||[]).map(cr=>latest.scores?.[cr.id]).filter(v=>v>0);const ca=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:0;
+return(<div key={cat.id} style={S.card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:15}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span></div><span style={{fontSize:15,fontWeight:700,color:scoreColor(ca)}}>{ca>0?ca.toFixed(1):"-"}<span style={{fontSize:10,color:"#6b7280"}}>/10</span></span></div>
+{(cat.criteria||[]).map(cr=>{const sc=latest.scores?.[cr.id]||0;return(<div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}><span style={{fontSize:12,color:"#c0c4d0"}}>{cr.name}</span><div style={{display:"flex",alignItems:"center",gap:8}}>{sc>0&&<span style={{fontSize:10,color:scoreColor(sc)}}>{scoreLbl(sc)}</span>}<span style={{width:30,height:28,borderRadius:7,background:sc>0?scoreColor(sc)+"18":"#1e2028",color:sc>0?scoreColor(sc):"#4b5060",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700}}>{sc||"-"}</span></div></div>);})}</div>);})}
+{latest.note&&<div style={S.card}><div style={{fontSize:11,fontWeight:600,color:"#6b7280",marginBottom:6}}>หมายเหตุ</div><div style={{fontSize:12,color:"#c0c4d0",lineHeight:1.6}}>{latest.note}</div></div>}
+{latest.evaluatedBy&&<div style={{fontSize:10,color:"#4b5060",marginBottom:12}}>ประเมินโดย: {latest.evaluatedBy} • {new Date(latest.date).toLocaleDateString("th-TH",{year:"numeric",month:"short",day:"numeric"})}</div>}
+</>);})()}
+</div>);})()}
 
-        <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:24}}>
-          {[
-            {label:"พนักงานทั้งหมด",value:visibleEmployees.length,icon:"👤",color:"#5B8DEF"},
-            {label:`ประเมินแล้ว ${qLabel(curQ,curY)}`,value:visibleEmployees.length-pendingEvals.length,icon:"✅",color:"#10B981"},
-            {label:"รอประเมิน",value:pendingEvals.length,icon:"⏳",color:"#F59E0B"},
-            {label:"ประเมินทั้งหมด",value:evaluations.length,icon:"📝",color:"#A855F7"},
-          ].map((s,i)=>(
-            <div key={i} style={{...S.card,display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:40,height:40,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,background:s.color+"14",flexShrink:0}}>{s.icon}</div>
-              <div><div style={{fontSize:20,fontWeight:700,color:"#f0f0f0"}}>{s.value}</div><div style={{fontSize:10,color:"#6b7280"}}>{s.label}</div></div>
-            </div>
-          ))}
-        </div>
+{/* YEARLY */}
+{view==="yearly"&&(<div style={{animation:"slideUp .3s ease"}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+<h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0"}}>สรุปคะแนนรายปี</h2>
+<div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>setSelYear(selYear-1)} style={S.btnO("#6b7280")}>◀</button><span style={{fontSize:16,fontWeight:700,color:"#5B8DEF",minWidth:50,textAlign:"center"}}>{selYear}</span><button onClick={()=>setSelYear(selYear+1)} style={S.btnO("#6b7280")}>▶</button></div></div>
+{visTeams.map(t=>{const te=visEmps.filter(e=>e.team===t.id);if(!te.length)return null;
+return(<div key={t.id} style={{marginBottom:20}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span style={{fontSize:16}}>{t.icon}</span><span style={{fontSize:14,fontWeight:700,color:t.color}}>{t.name}</span></div>
+<div style={{...S.card,overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:"1px solid #1e2028"}}>
+<th style={{textAlign:"left",padding:"8px 10px",color:"#6b7280",fontWeight:600}}>พนักงาน</th>
+{[1,2,3,4].map(q=><th key={q} style={{textAlign:"center",padding:"8px 6px",color:q===curQ&&selYear===curY?"#5B8DEF":"#6b7280",fontWeight:600}}>Q{q}</th>)}
+<th style={{textAlign:"center",padding:"8px 10px",color:"#F59E0B",fontWeight:700}}>เฉลี่ยรวม</th>
+</tr></thead><tbody>{te.map(emp=>{const ya2=calcYearAvg(emp.id,selYear);
+return(<tr key={emp._key} style={{borderBottom:"1px solid #1e202808"}}><td style={{padding:"8px 10px",color:"#e0e0e0",fontWeight:500}}>{emp.name}</td>
+{[1,2,3,4].map(q=>{const ev=getEvalQ(emp.id,q,selYear);const a=ev?calcAvg(ev.scores):0;return<td key={q} style={{textAlign:"center",padding:"8px 6px",color:a>0?scoreColor(a):"#2a2d35",fontWeight:a>0?700:400}}>{a>0?a.toFixed(1):"-"}</td>;})}
+<td style={{textAlign:"center",padding:"8px 10px",fontWeight:700,fontSize:14,color:ya2>0?scoreColor(ya2):"#2a2d35"}}>{ya2>0?ya2.toFixed(2):"-"}</td></tr>);})}</tbody></table></div></div>);})}
+</div>)}
 
-        <h3 style={{fontSize:14,fontWeight:700,color:"#c0c4d0",marginBottom:12}}>ภาพรวมแต่ละทีม</h3>
-        <div className="team-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
-          {visibleTeams.map(t=>{
-            const te=employees.filter(e=>e.team===t.id);
-            const done=te.filter(e=>getEvalForQ(e.id,curQ,curY)).length;
-            const tevs=evaluations.filter(ev=>ev.quarter===curQ&&ev.year===curY&&te.some(e=>e.id===ev.employeeId));
-            const avg=tevs.length?tevs.reduce((s,ev)=>s+calcAvg(ev.scores),0)/tevs.length:0;
-            return(
-              <div key={t.id} style={{...S.card,cursor:"pointer"}} onClick={()=>nav("team",t)}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                  <span style={{fontSize:20}}>{t.icon}</span>
-                  <div><div style={{fontSize:12,fontWeight:700,color:t.color}}>{t.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{te.length} คน • {done}/{te.length} ประเมินแล้ว</div></div>
-                </div>
-                {avg>0?(
-                  <div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                      <span style={{fontSize:10,color:"#6b7280"}}>เฉลี่ย {qLabel(curQ,curY)}</span>
-                      <span style={{fontSize:13,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</span>
-                    </div>
-                    <div style={{height:4,background:"#1e2028",borderRadius:3}}><div style={{height:"100%",width:`${(avg/10)*100}%`,background:scoreColor(avg),borderRadius:3}}/></div>
-                  </div>
-                ):<div style={{fontSize:10,color:"#4b5060"}}>ยังไม่มีการประเมิน</div>}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    )}
+{/* MANAGE ADMINS */}
+{view==="manage_admins"&&isAdmin&&(<div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+<div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>จัดการ Admin</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>เพิ่ม/ลบ Admin ที่สามารถดูได้ทุกทีมและจัดการระบบ</p></div>
+<button onClick={()=>setShowAddAdmin(true)} style={S.btn("#E8453C")}>+ เพิ่ม Admin</button></div>
+{Object.entries(admins).length===0?<div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}><div style={{fontSize:40,marginBottom:10,opacity:.5}}>🛡️</div><div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มี Admin</div></div>
+:Object.entries(admins).map(([key,val])=>{const isSup=val.email?.toLowerCase()===SUPER_ADMIN;
+return(<div key={key} style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+<div style={{display:"flex",alignItems:"center",gap:12}}>
+<div style={{width:40,height:40,borderRadius:10,background:"#E8453C18",color:"#E8453C",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🛡️</div>
+<div><div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{val.email}{isSup&&<Badge color="#F59E0B" style={{marginLeft:6}}>Super Admin</Badge>}</div>{val.name&&<div style={{fontSize:11,color:"#6b7280"}}>{val.name}</div>}</div>
+</div>
+{!isSup&&<button onClick={()=>removeAdmin(key,val.email)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>}
+</div>);})}
+</div>)}
 
-    {/* ═══ TEAM ═══ */}
-    {view==="team"&&selTeam&&(
-      <div style={{animation:"slideUp .3s ease"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
-              <span style={{fontSize:24}}>{selTeam.icon}</span>
-              <h2 style={{fontSize:20,fontWeight:700,color:selTeam.color,margin:0}}>{selTeam.name}</h2>
-              <Badge color="#5B8DEF">{qLabel(curQ,curY)}</Badge>
-            </div>
-            <p style={{color:"#6b7280",fontSize:12}}>{teamEmps.length} พนักงาน</p>
-          </div>
-          {isAdmin&&<button onClick={()=>{setNewEmp({name:"",team:selTeam.id,role:"",isLeader:false});setShowAddEmp(true);}} style={S.btn(selTeam.color)}>+ เพิ่มพนักงาน</button>}
-        </div>
+{/* MANAGE LEADERS */}
+{view==="manage_leaders"&&isAdmin&&(<div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+<div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>จัดการหัวหน้าทีม</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>กำหนด email ที่เข้าถึงแต่ละทีม</p></div>
+<button onClick={()=>setShowAddLeader(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหัวหน้าทีม</button></div>
+{Object.keys(leaders).length===0?<div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}><div style={{fontSize:40,marginBottom:10,opacity:.5}}>👑</div><div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มีหัวหน้าทีม</div></div>
+:Object.entries(leaders).map(([key,val])=>{const t=getTeam(val.teamId);
+return(<div key={key} style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+<div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:40,height:40,borderRadius:10,background:(t?.color||"#5B8DEF")+"18",color:t?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{t?.icon||"👤"}</div><div><div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{val.email}</div><Badge color={t?.color||"#5B8DEF"}>{t?.name||val.teamId}</Badge></div></div>
+<button onClick={()=>removeLeader(key)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>
+</div>);})}
+</div>)}
 
-        {/* Pending alert */}
-        {(()=>{const p=teamEmps.filter(e=>!getEvalForQ(e.id,curQ,curY));return p.length>0?(
-          <Alert color="#F59E0B" icon="⏰">ยังเหลือ <strong>{p.length} คน</strong> ที่ยังไม่ได้ประเมินในรอบ {qLabel(curQ,curY)}</Alert>
-        ):teamEmps.length>0?(
-          <Alert color="#10B981" icon="✅">ประเมินครบทุกคนในรอบ {qLabel(curQ,curY)} แล้ว!</Alert>
-        ):null;})()}
+{/* SETTINGS */}
+{view==="settings"&&isAdmin&&(<div style={{animation:"slideUp .3s ease",maxWidth:650}}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+<div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>ตั้งค่าหัวข้อประเมิน</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>เพิ่ม ลบ หรือแก้ไขหมวดและเกณฑ์</p></div>
+<button onClick={()=>setShowAddCat(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหมวด</button></div>
+{cats.map(cat=>(<div key={cat.id} style={S.card}>
+<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+<div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:18}}>{cat.icon}</span><span style={{fontSize:14,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:11,color:"#6b7280"}}>{cat.nameEn}</span></div>
+<div style={{display:"flex",gap:6}}><button onClick={()=>setShowAddCrit(cat.id)} style={S.btnO("#10B981")}>+ เกณฑ์</button><button onClick={()=>removeCat(cat.id)} style={S.btnO("#EF4444")}>ลบหมวด</button></div></div>
+{(!cat.criteria||cat.criteria.length===0)?<div style={{fontSize:11,color:"#4b5060",padding:"10px 0"}}>ยังไม่มีเกณฑ์</div>:cat.criteria.map(cr=>(<div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}>
+<div><span style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</span>{cr.nameEn&&<span style={{fontSize:10,color:"#6b7280",marginLeft:6}}>{cr.nameEn}</span>}{cr.desc&&<div style={{fontSize:10,color:"#4b5060",marginTop:1}}>{cr.desc}</div>}</div>
+<button onClick={()=>removeCriteria(cat.id,cr.id)} style={{background:"none",border:"none",color:"#EF4444",fontSize:15,padding:4}}>✕</button></div>))}
+</div>))}
+<div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #1e2028"}}><button onClick={()=>{if(confirm("รีเซ็ตหัวข้อ?"))fbSet("categories",DEFAULT_CATS);}} style={S.btnO("#F97316")}>🔄 รีเซ็ตค่าเริ่มต้น</button></div>
+</div>)}
 
-        {teamEmps.length===0?(
-          <div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}><div style={{fontSize:40,marginBottom:10,opacity:.5}}>👤</div><div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มีพนักงานในทีมนี้</div></div>
-        ):(teamEmps.map(emp=>{
-          const ev=getEvalForQ(emp.id,curQ,curY);
-          const avg=ev?calcAvg(ev.scores):0;
-          const done=!!ev;
-          return(
-            <div key={emp._key} className="emp-row" style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between",borderLeft:done?`3px solid #10B981`:`3px solid #F59E0B`}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:40,height:40,borderRadius:10,background:selTeam.color+"18",color:selTeam.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,flexShrink:0}}>{emp.name.charAt(0)}</div>
-                <div>
-                  <div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{emp.name}{emp.isLeader&&<Badge color="#F59E0B" style={{marginLeft:6}}>หัวหน้า</Badge>}</div>
-                  <div style={{fontSize:11,color:"#6b7280"}}>{emp.role||"ไม่ระบุตำแหน่ง"}</div>
-                  <div style={{fontSize:10,color:done?"#10B981":"#F59E0B",marginTop:2}}>{done?`✓ ประเมินแล้ว ${qLabel(curQ,curY)}`:`⏳ รอประเมิน ${qLabel(curQ,curY)}`}</div>
-                </div>
-              </div>
-              <div className="emp-actions" style={{display:"flex",alignItems:"center",gap:8}}>
-                {avg>0&&<div style={{textAlign:"right",marginRight:4}}><div style={{fontSize:16,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:"#6b7280"}}>{qLabel(curQ,curY)}</div></div>}
-                <button onClick={()=>{setViewResult(emp);setView("results");}} style={S.btnO("#A855F7")}>ดูผล</button>
-                {!done&&<button onClick={()=>startEval(emp)} style={S.btn(selTeam.color)}>ประเมิน</button>}
-                {done&&<button onClick={()=>startEval(emp)} style={S.btnO(selTeam.color)}>ประเมินซ้ำ</button>}
-                {isAdmin&&<button onClick={()=>removeEmployee(emp)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>}
-              </div>
-            </div>
-          );
-        }))}
-      </div>
-    )}
+</div>
 
-    {/* ═══ EVALUATE ═══ */}
-    {view==="evaluate"&&evalTarget&&(
-      <div style={{animation:"slideUp .3s ease",maxWidth:680}}>
-        <button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-          <div style={{width:44,height:44,borderRadius:12,background:(getTeam(evalTarget.team)?.color||"#5B8DEF")+"18",color:getTeam(evalTarget.team)?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,flexShrink:0}}>{evalTarget.name.charAt(0)}</div>
-          <div>
-            <h2 style={{fontSize:18,fontWeight:700,color:"#f0f0f0",margin:0}}>ประเมิน: {evalTarget.name}</h2>
-            <div style={{fontSize:11,color:"#6b7280"}}>{evalTarget.role} • {getTeam(evalTarget.team)?.name} • <strong style={{color:"#5B8DEF"}}>{qLabel(curQ,curY)}</strong></div>
-          </div>
-        </div>
+{/* MODALS */}
+<Modal open={showAddEmp} onClose={()=>setShowAddEmp(false)} title="เพิ่มพนักงาน"><div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>ชื่อ-นามสกุล</label><input style={S.input} value={newEmp.name} onChange={e=>setNewEmp({...newEmp,name:e.target.value})} placeholder="ชื่อพนักงาน"/></div>
+<div><label style={S.label}>ทีม</label><select style={S.input} value={newEmp.team} onChange={e=>setNewEmp({...newEmp,team:e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+<div><label style={S.label}>ตำแหน่ง</label><input style={S.input} value={newEmp.role} onChange={e=>setNewEmp({...newEmp,role:e.target.value})} placeholder="ตำแหน่งงาน"/></div>
+<label style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" checked={newEmp.isLeader} onChange={e=>setNewEmp({...newEmp,isLeader:e.target.checked})}/><span style={{fontSize:12,color:"#c0c4d0"}}>เป็นหัวหน้างาน</span></label>
+<button onClick={addEmployee} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มพนักงาน"}</button></div></Modal>
 
-        {/* Already evaluated warning */}
-        {getEvalForQ(evalTarget.id,curQ,curY)&&(
-          <Alert color="#F97316" icon="⚠️">พนักงานคนนี้ถูกประเมินใน {qLabel(curQ,curY)} แล้ว การบันทึกจะเป็นการ<strong>เพิ่ม</strong>การประเมินอีกครั้ง</Alert>
-        )}
+<Modal open={showAddAdmin} onClose={()=>setShowAddAdmin(false)} title="เพิ่ม Admin"><div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>Email (Google Account)</label><input style={S.input} value={newAdmin.email} onChange={e=>setNewAdmin({...newAdmin,email:e.target.value})} placeholder="email@gmail.com" type="email"/></div>
+<div><label style={S.label}>ชื่อ (ไม่บังคับ)</label><input style={S.input} value={newAdmin.name} onChange={e=>setNewAdmin({...newAdmin,name:e.target.value})} placeholder="ชื่อ Admin"/></div>
+<div style={{background:"#E8453C10",border:"1px solid #E8453C30",borderRadius:10,padding:12,fontSize:11,color:"#E8453C",lineHeight:1.5}}>🛡️ Admin จะเข้าสู่ระบบด้วย Google Account นี้ และมีสิทธิ์เต็มในการดูทุกทีม จัดการพนักงาน หัวข้อประเมิน และ Admin คนอื่น</div>
+<button onClick={addAdmin} disabled={saving} style={{...S.btn("#E8453C"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่ม Admin"}</button></div></Modal>
 
-        <div style={{...S.card,display:"flex",gap:10,flexWrap:"wrap",padding:"12px 16px",marginBottom:6}}>
-          <span style={{fontSize:10,color:"#6b7280",fontWeight:600}}>เกณฑ์คะแนน (เต็ม 10):</span>
-          <span style={{fontSize:10,color:"#EF4444",fontWeight:600}}>1-2 ต้องปรับปรุง</span>
-          <span style={{fontSize:10,color:"#F97316",fontWeight:600}}>3-4 ต่ำกว่ามาตรฐาน</span>
-          <span style={{fontSize:10,color:"#F59E0B",fontWeight:600}}>5-6 ได้มาตรฐาน</span>
-          <span style={{fontSize:10,color:"#10B981",fontWeight:600}}>7-8 ดี</span>
-          <span style={{fontSize:10,color:"#3B82F6",fontWeight:600}}>9-10 ดีเยี่ยม</span>
-        </div>
+<Modal open={showAddLeader} onClose={()=>setShowAddLeader(false)} title="เพิ่มหัวหน้าทีม"><div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>Email (Google Account)</label><input style={S.input} value={newLeader.email} onChange={e=>setNewLeader({...newLeader,email:e.target.value})} placeholder="email@gmail.com" type="email"/></div>
+<div><label style={S.label}>ดูแลทีม</label><select style={S.input} value={newLeader.teamId} onChange={e=>setNewLeader({...newLeader,teamId:e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+<div style={{background:"#F59E0B10",border:"1px solid #F59E0B30",borderRadius:10,padding:12,fontSize:11,color:"#F59E0B",lineHeight:1.5}}>💡 หัวหน้าทีมจะเห็นเฉพาะทีมที่กำหนด ถ้าต้องการให้ดูแลหลายทีม ให้เพิ่มหลายรายการ</div>
+<button onClick={addLeader} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มหัวหน้าทีม"}</button></div></Modal>
 
-        {cats.filter(cat=>cat.id!=="leadership"||evalTarget.isLeader).map(cat=>(
-          <div key={cat.id} style={S.card}>
-            <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:14}}><span style={{fontSize:16}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:10,color:"#6b7280"}}>{cat.nameEn}</span></div>
-            {(cat.criteria||[]).map(cr=>(
-              <div key={cr.id} className="score-row" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid #1e2028",gap:8}}>
-                <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{cr.desc}</div></div>
-                <ScoreInput value={evalScores[cr.id]||0} onChange={v=>setEvalScores({...evalScores,[cr.id]:v})}/>
-              </div>
-            ))}
-          </div>
-        ))}
+<Modal open={showAddCat} onClose={()=>setShowAddCat(false)} title="เพิ่มหมวดประเมิน"><div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>ชื่อหมวด (ไทย)</label><input style={S.input} value={newCat.name} onChange={e=>setNewCat({...newCat,name:e.target.value})} placeholder="เช่น ความคิดสร้างสรรค์"/></div>
+<div><label style={S.label}>ชื่อหมวด (English)</label><input style={S.input} value={newCat.nameEn} onChange={e=>setNewCat({...newCat,nameEn:e.target.value})} placeholder="e.g. Creativity"/></div>
+<div><label style={S.label}>ไอคอน</label><input style={{...S.input,width:80}} value={newCat.icon} onChange={e=>setNewCat({...newCat,icon:e.target.value})}/></div>
+<button onClick={addCategory} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มหมวด"}</button></div></Modal>
 
-        <div style={S.card}><label style={S.label}>หมายเหตุ / ข้อเสนอแนะ</label><textarea value={evalNote} onChange={e=>setEvalNote(e.target.value)} placeholder="เพิ่มความคิดเห็น..." style={{...S.input,minHeight:70,resize:"vertical"}}/></div>
-        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}>
-          <button onClick={()=>setView("team")} style={S.btnO("#6b7280")}>ยกเลิก</button>
-          <button onClick={submitEval} disabled={saving} style={S.btn("#10B981")}>{saving?"กำลังบันทึก...":"✓ บันทึกการประเมิน"}</button>
-        </div>
-      </div>
-    )}
+<Modal open={!!showAddCrit} onClose={()=>setShowAddCrit(null)} title={"เพิ่มเกณฑ์: "+(cats.find(c=>c.id===showAddCrit)?.name||"")}><div style={{display:"flex",flexDirection:"column",gap:12}}>
+<div><label style={S.label}>ชื่อเกณฑ์ (ไทย)</label><input style={S.input} value={newCrit.name} onChange={e=>setNewCrit({...newCrit,name:e.target.value})} placeholder="เช่น ทักษะการนำเสนอ"/></div>
+<div><label style={S.label}>ชื่อเกณฑ์ (English)</label><input style={S.input} value={newCrit.nameEn} onChange={e=>setNewCrit({...newCrit,nameEn:e.target.value})} placeholder="e.g. Presentation Skills"/></div>
+<div><label style={S.label}>คำอธิบาย</label><input style={S.input} value={newCrit.desc} onChange={e=>setNewCrit({...newCrit,desc:e.target.value})} placeholder="รายละเอียด"/></div>
+<button onClick={addCriteria} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มเกณฑ์"}</button></div></Modal>
 
-    {/* ═══ RESULTS ═══ */}
-    {view==="results"&&viewResult&&(()=>{
-      const allEvs=evaluations.filter(e=>e.employeeId===viewResult.id).sort((a,b)=>b.date-a.date);
-      const team=getTeam(viewResult.team);
-      const yearAvg=calcYearAvg(viewResult.id,curY);
-      const quarters=[1,2,3,4];
-      return(
-        <div style={{animation:"slideUp .3s ease",maxWidth:680}}>
-          <button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
-          <div style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:48,height:48,borderRadius:12,background:(team?.color||"#5B8DEF")+"18",color:team?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700}}>{viewResult.name.charAt(0)}</div>
-              <div><h2 style={{fontSize:16,fontWeight:700,color:"#f0f0f0",margin:0}}>{viewResult.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{viewResult.role} • {team?.name}</div></div>
-            </div>
-            <div style={{textAlign:"center"}}><div style={{fontSize:10,color:"#6b7280",marginBottom:2}}>เฉลี่ยรวมปี {curY}</div><div style={{fontSize:28,fontWeight:700,color:yearAvg>0?scoreColor(yearAvg):"#4b5060"}}>{yearAvg>0?yearAvg.toFixed(2):"-"}</div><div style={{fontSize:10,color:yearAvg>0?scoreColor(yearAvg):"#4b5060"}}>{yearAvg>0?scoreLabelTh(yearAvg):"ยังไม่มีข้อมูล"}</div></div>
-          </div>
-
-          {/* Quarter summary */}
-          <div style={S.card}>
-            <div style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:12}}>ผลประเมินรายไตรมาส ปี {curY}</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-              {quarters.map(q=>{
-                const ev=getEvalForQ(viewResult.id,q,curY);
-                const avg=ev?calcAvg(ev.scores):0;
-                const isCurrent=q===curQ;
-                return(
-                  <div key={q} style={{background:isCurrent?"#5B8DEF08":"#0c0e13",border:`1px solid ${isCurrent?"#5B8DEF30":"#1e2028"}`,borderRadius:10,padding:12,textAlign:"center"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:isCurrent?"#5B8DEF":"#6b7280",marginBottom:6}}>Q{q}</div>
-                    {avg>0?(
-                      <><div style={{fontSize:20,fontWeight:700,color:scoreColor(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:scoreColor(avg)}}>{scoreLabelTh(avg)}</div></>
-                    ):(
-                      <><div style={{fontSize:20,color:"#2a2d35"}}>-</div><div style={{fontSize:9,color:"#4b5060"}}>{isCurrent?"รอประเมิน":"ไม่มีข้อมูล"}</div></>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Latest eval detail */}
-          {allEvs.length>0&&(()=>{
-            const latest=allEvs[0];const avg=calcAvg(latest.scores);
-            return(
-              <>
-              <div style={{fontSize:13,fontWeight:700,color:"#c0c4d0",marginBottom:8,marginTop:4}}>รายละเอียดล่าสุด — {qLabel(latest.quarter,latest.year)}</div>
-              {cats.filter(cat=>cat.id!=="leadership"||viewResult.isLeader).map(cat=>{
-                const cs=(cat.criteria||[]).map(cr=>latest.scores?.[cr.id]).filter(v=>v>0);
-                const ca=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:0;
-                return(
-                  <div key={cat.id} style={S.card}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                      <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:15}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span></div>
-                      <span style={{fontSize:15,fontWeight:700,color:scoreColor(ca)}}>{ca>0?ca.toFixed(1):"-"}<span style={{fontSize:10,color:"#6b7280"}}>/10</span></span>
-                    </div>
-                    {(cat.criteria||[]).map(cr=>{
-                      const sc=latest.scores?.[cr.id]||0;
-                      return(
-                        <div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}>
-                          <span style={{fontSize:12,color:"#c0c4d0"}}>{cr.name}</span>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            {sc>0&&<span style={{fontSize:10,color:scoreColor(sc)}}>{scoreLabelTh(sc)}</span>}
-                            <span style={{width:30,height:28,borderRadius:7,background:sc>0?scoreColor(sc)+"18":"#1e2028",color:sc>0?scoreColor(sc):"#4b5060",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700}}>{sc||"-"}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              {latest.note&&<div style={S.card}><div style={{fontSize:11,fontWeight:600,color:"#6b7280",marginBottom:6}}>หมายเหตุ</div><div style={{fontSize:12,color:"#c0c4d0",lineHeight:1.6}}>{latest.note}</div></div>}
-              {latest.evaluatedBy&&<div style={{fontSize:10,color:"#4b5060",marginBottom:12}}>ประเมินโดย: {latest.evaluatedBy} • {new Date(latest.date).toLocaleDateString("th-TH",{year:"numeric",month:"short",day:"numeric"})}</div>}
-              </>
-            );
-          })()}
-        </div>
-      );
-    })()}
-
-    {/* ═══ YEARLY ═══ */}
-    {view==="yearly"&&(
-      <div style={{animation:"slideUp .3s ease"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
-          <h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0"}}>สรุปคะแนนรายปี</h2>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick={()=>setSelYear(selYear-1)} style={S.btnO("#6b7280")}>◀</button>
-            <span style={{fontSize:16,fontWeight:700,color:"#5B8DEF",minWidth:50,textAlign:"center"}}>{selYear}</span>
-            <button onClick={()=>setSelYear(selYear+1)} style={S.btnO("#6b7280")}>▶</button>
-          </div>
-        </div>
-
-        {visibleTeams.map(t=>{
-          const te=visibleEmployees.filter(e=>e.team===t.id);
-          if(!te.length)return null;
-          return(
-            <div key={t.id} style={{marginBottom:20}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><span style={{fontSize:16}}>{t.icon}</span><span style={{fontSize:14,fontWeight:700,color:t.color}}>{t.name}</span></div>
-              <div style={{...S.card,overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                  <thead><tr style={{borderBottom:"1px solid #1e2028"}}>
-                    <th style={{textAlign:"left",padding:"8px 10px",color:"#6b7280",fontWeight:600}}>พนักงาน</th>
-                    {[1,2,3,4].map(q=><th key={q} style={{textAlign:"center",padding:"8px 6px",color:q===curQ?"#5B8DEF":"#6b7280",fontWeight:600}}>Q{q}</th>)}
-                    <th style={{textAlign:"center",padding:"8px 10px",color:"#F59E0B",fontWeight:700}}>เฉลี่ยรวม</th>
-                  </tr></thead>
-                  <tbody>
-                    {te.map(emp=>{
-                      const ya=calcYearAvg(emp.id,selYear);
-                      return(
-                        <tr key={emp._key} style={{borderBottom:"1px solid #1e202808"}}>
-                          <td style={{padding:"8px 10px",color:"#e0e0e0",fontWeight:500}}>{emp.name}</td>
-                          {[1,2,3,4].map(q=>{
-                            const ev=getEvalForQ(emp.id,q,selYear);
-                            const a=ev?calcAvg(ev.scores):0;
-                            return<td key={q} style={{textAlign:"center",padding:"8px 6px",color:a>0?scoreColor(a):"#2a2d35",fontWeight:a>0?700:400}}>{a>0?a.toFixed(1):"-"}</td>;
-                          })}
-                          <td style={{textAlign:"center",padding:"8px 10px",fontWeight:700,fontSize:14,color:ya>0?scoreColor(ya):"#2a2d35"}}>{ya>0?ya.toFixed(2):"-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    )}
-
-    {/* ═══ MANAGE LEADERS ═══ */}
-    {view==="manage_leaders"&&isAdmin&&(
-      <div style={{animation:"slideUp .3s ease",maxWidth:650}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-          <div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>จัดการหัวหน้าทีม</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>กำหนด email ที่สามารถเข้าถึงแต่ละทีม</p></div>
-          <button onClick={()=>setShowAddLeader(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหัวหน้าทีม</button>
-        </div>
-
-        {Object.keys(leaders).length===0?(
-          <div style={{textAlign:"center",padding:"50px 16px",color:"#4b5060"}}><div style={{fontSize:40,marginBottom:10,opacity:.5}}>👑</div><div style={{fontSize:14,color:"#6b7280",fontWeight:600}}>ยังไม่มีหัวหน้าทีม</div></div>
-        ):(
-          Object.entries(leaders).map(([key,val])=>{
-            const t=getTeam(val.teamId);
-            return(
-              <div key={key} style={{...S.card,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:40,height:40,borderRadius:10,background:(t?.color||"#5B8DEF")+"18",color:t?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{t?.icon||"👤"}</div>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:600,color:"#f0f0f0"}}>{val.email}</div>
-                    <Badge color={t?.color||"#5B8DEF"}>{t?.name||val.teamId}</Badge>
-                  </div>
-                </div>
-                <button onClick={()=>removeLeader(key)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>
-              </div>
-            );
-          })
-        )}
-      </div>
-    )}
-
-    {/* ═══ SETTINGS ═══ */}
-    {view==="settings"&&isAdmin&&(
-      <div style={{animation:"slideUp .3s ease",maxWidth:650}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-          <div><h2 style={{fontSize:20,fontWeight:700,color:"#f0f0f0",margin:0}}>ตั้งค่าหัวข้อประเมิน</h2><p style={{color:"#6b7280",fontSize:12,marginTop:3}}>เพิ่ม ลบ หรือแก้ไขหมวดและเกณฑ์</p></div>
-          <button onClick={()=>setShowAddCat(true)} style={S.btn("#5B8DEF")}>+ เพิ่มหมวด</button>
-        </div>
-        {cats.map(cat=>(
-          <div key={cat.id} style={S.card}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:7}}><span style={{fontSize:18}}>{cat.icon}</span><span style={{fontSize:14,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:11,color:"#6b7280"}}>{cat.nameEn}</span></div>
-              <div style={{display:"flex",gap:6}}><button onClick={()=>setShowAddCrit(cat.id)} style={S.btnO("#10B981")}>+ เกณฑ์</button><button onClick={()=>removeCat(cat.id)} style={S.btnO("#EF4444")}>ลบหมวด</button></div>
-            </div>
-            {(!cat.criteria||cat.criteria.length===0)?<div style={{fontSize:11,color:"#4b5060",padding:"10px 0"}}>ยังไม่มีเกณฑ์</div>:cat.criteria.map(cr=>(
-              <div key={cr.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #1e2028"}}>
-                <div><span style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</span>{cr.nameEn&&<span style={{fontSize:10,color:"#6b7280",marginLeft:6}}>{cr.nameEn}</span>}{cr.desc&&<div style={{fontSize:10,color:"#4b5060",marginTop:1}}>{cr.desc}</div>}</div>
-                <button onClick={()=>removeCriteria(cat.id,cr.id)} style={{background:"none",border:"none",color:"#EF4444",fontSize:15,padding:4}}>✕</button>
-              </div>
-            ))}
-          </div>
-        ))}
-        <div style={{marginTop:16,paddingTop:12,borderTop:"1px solid #1e2028"}}><button onClick={()=>{if(confirm("รีเซ็ตหัวข้อทั้งหมด?"))fbSet("categories",DEFAULT_CATS);}} style={S.btnO("#F97316")}>🔄 รีเซ็ตค่าเริ่มต้น</button></div>
-      </div>
-    )}
-
-    </div>
-
-    {/* ═══ MODALS ═══ */}
-    <Modal open={showAddEmp} onClose={()=>setShowAddEmp(false)} title="เพิ่มพนักงาน">
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={S.label}>ชื่อ-นามสกุล</label><input style={S.input} value={newEmp.name} onChange={e=>setNewEmp({...newEmp,name:e.target.value})} placeholder="ชื่อพนักงาน"/></div>
-        <div><label style={S.label}>ทีม</label><select style={S.input} value={newEmp.team} onChange={e=>setNewEmp({...newEmp,team:e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-        <div><label style={S.label}>ตำแหน่ง</label><input style={S.input} value={newEmp.role} onChange={e=>setNewEmp({...newEmp,role:e.target.value})} placeholder="ตำแหน่งงาน"/></div>
-        <label style={{display:"flex",alignItems:"center",gap:8}}><input type="checkbox" checked={newEmp.isLeader} onChange={e=>setNewEmp({...newEmp,isLeader:e.target.checked})}/><span style={{fontSize:12,color:"#c0c4d0"}}>เป็นหัวหน้างาน (ประเมินภาวะผู้นำด้วย)</span></label>
-        <button onClick={addEmployee} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มพนักงาน"}</button>
-      </div>
-    </Modal>
-
-    <Modal open={showAddLeader} onClose={()=>setShowAddLeader(false)} title="เพิ่มหัวหน้าทีม">
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={S.label}>Email (Google Account)</label><input style={S.input} value={newLeader.email} onChange={e=>setNewLeader({...newLeader,email:e.target.value})} placeholder="email@gmail.com" type="email"/></div>
-        <div><label style={S.label}>ดูแลทีม</label><select style={S.input} value={newLeader.teamId} onChange={e=>setNewLeader({...newLeader,teamId:e.target.value})}><option value="">เลือกทีม</option>{TEAMS.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
-        <div style={{background:"#F59E0B10",border:"1px solid #F59E0B30",borderRadius:10,padding:12,fontSize:11,color:"#F59E0B",lineHeight:1.5}}>
-          💡 หัวหน้าทีมจะเข้าสู่ระบบด้วย Google Account นี้ และเห็นได้เฉพาะทีมที่กำหนดเท่านั้น หากต้องการให้ดูแลหลายทีม ให้เพิ่มหลายรายการ
-        </div>
-        <button onClick={addLeader} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มหัวหน้าทีม"}</button>
-      </div>
-    </Modal>
-
-    <Modal open={showAddCat} onClose={()=>setShowAddCat(false)} title="เพิ่มหมวดประเมิน">
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={S.label}>ชื่อหมวด (ไทย)</label><input style={S.input} value={newCat.name} onChange={e=>setNewCat({...newCat,name:e.target.value})} placeholder="เช่น ความคิดสร้างสรรค์"/></div>
-        <div><label style={S.label}>ชื่อหมวด (English)</label><input style={S.input} value={newCat.nameEn} onChange={e=>setNewCat({...newCat,nameEn:e.target.value})} placeholder="e.g. Creativity"/></div>
-        <div><label style={S.label}>ไอคอน</label><input style={{...S.input,width:80}} value={newCat.icon} onChange={e=>setNewCat({...newCat,icon:e.target.value})}/></div>
-        <button onClick={addCategory} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มหมวด"}</button>
-      </div>
-    </Modal>
-
-    <Modal open={!!showAddCrit} onClose={()=>setShowAddCrit(null)} title={`เพิ่มเกณฑ์: ${cats.find(c=>c.id===showAddCrit)?.name||""}`}>
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div><label style={S.label}>ชื่อเกณฑ์ (ไทย)</label><input style={S.input} value={newCrit.name} onChange={e=>setNewCrit({...newCrit,name:e.target.value})} placeholder="เช่น ทักษะการนำเสนอ"/></div>
-        <div><label style={S.label}>ชื่อเกณฑ์ (English)</label><input style={S.input} value={newCrit.nameEn} onChange={e=>setNewCrit({...newCrit,nameEn:e.target.value})} placeholder="e.g. Presentation Skills"/></div>
-        <div><label style={S.label}>คำอธิบาย</label><input style={S.input} value={newCrit.desc} onChange={e=>setNewCrit({...newCrit,desc:e.target.value})} placeholder="รายละเอียด"/></div>
-        <button onClick={addCriteria} disabled={saving} style={{...S.btn("#10B981"),marginTop:4}}>{saving?"กำลังบันทึก...":"เพิ่มเกณฑ์"}</button>
-      </div>
-    </Modal>
-
-  </div>);
-}
+</div>);}
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
