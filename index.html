@@ -180,6 +180,7 @@ const[showAddCrit,setShowAddCrit]=useState(null);
 const[showAddLeader,setSAL]=useState(false);
 const[showAddAdmin,setSAA]=useState(false);
 const[editEmp,setEditEmp]=useState(null);
+const[editEvalKey,setEditEvalKey]=useState(null);
 const[nE,setNE]=useState({name:"",team:"",role:"",isLeader:false});
 const[nC,setNC]=useState({name:"",nameEn:"",icon:"📋"});
 const[nCr,setNCr]=useState({name:"",nameEn:"",desc:""});
@@ -206,8 +207,16 @@ const pE=useMemo(()=>visEmps.filter(emp=>!gEQ(emp.id,curQ,curY)),[visEmps,evals,
 const addEmp=async()=>{const t=nE.team||selTeam?.id||"";if(!nE.name.trim()||!t)return;setSV(true);await fbP("employees",{id:uid(),name:nE.name.trim(),team:t,role:nE.role.trim(),isLeader:nE.isLeader,createdAt:Date.now()});setNE({name:"",team:"",role:"",isLeader:false});setSAE(false);setSV(false);};
 const rmEmp=async emp=>{if(!confirm("ลบพนักงานคนนี้?"))return;await fbR("employees/"+emp._key);evals.filter(e=>e.employeeId===emp.id).forEach(ev=>fbR("evaluations/"+ev._key));};
 const edEmp=async()=>{if(!editEmp||!editEmp.name.trim())return;setSV(true);await fbS("employees/"+editEmp._key,{id:editEmp.id,name:editEmp.name.trim(),team:editEmp.team,role:editEmp.role.trim(),isLeader:editEmp.isLeader,createdAt:editEmp.createdAt});setEditEmp(null);setSV(false);};
-const stEval=emp=>{setEvalTarget(emp);setES({});setEN("");setView("evaluate");setSO(false);};
-const subEval=async()=>{if(!evalTarget)return;setSV(true);await fbP("evaluations",{id:uid(),employeeId:evalTarget.id,scores:{...eS},note:eN,quarter:curQ,year:curY,date:Date.now(),evaluatedBy:user.email});setSV(false);setView("team");};
+const stEval=emp=>{setEvalTarget(emp);setES({});setEN("");setEditEvalKey(null);setView("evaluate");setSO(false);};
+const stEditEval=(emp,ev)=>{setEvalTarget(emp);setES({...(ev.scores||{})});setEN(ev.note||"");setEditEvalKey(ev._key);setView("evaluate");setSO(false);};
+const subEval=async()=>{if(!evalTarget)return;setSV(true);
+if(editEvalKey){
+  const existing=evals.find(e=>e._key===editEvalKey);
+  if(existing){const{_key,...rest}=existing;await fbS("evaluations/"+editEvalKey,{...rest,scores:{...eS},note:eN,date:Date.now(),evaluatedBy:user.email});}
+}else{
+  await fbP("evaluations",{id:uid(),employeeId:evalTarget.id,scores:{...eS},note:eN,quarter:curQ,year:curY,date:Date.now(),evaluatedBy:user.email});
+}
+setSV(false);setEditEvalKey(null);setView("team");};
 
 // Per-team category CRUD
 const addCat=async()=>{if(!nC.name.trim())return;setSV(true);const cur=getCats(settingsTeam);await fbS("team_categories/"+settingsTeam,[...cur,{id:uid(),name:nC.name.trim(),nameEn:nC.nameEn.trim(),icon:nC.icon||"📋",criteria:[]}]);setNC({name:"",nameEn:"",icon:"📋"});setSAC(false);setSV(false);};
@@ -273,7 +282,7 @@ return<div key={emp._key} className="er" style={{...S.card,display:"flex",alignI
 <div className="ea" style={{display:"flex",alignItems:"center",gap:8}}>{avg>0&&<div style={{textAlign:"right",marginRight:4}}><div style={{fontSize:16,fontWeight:700,color:sC(avg)}}>{avg.toFixed(1)}</div><div style={{fontSize:9,color:"#6b7280"}}>{qL(curQ,curY)}</div></div>}
 <button onClick={()=>{setViewResult(emp);setView("results");}} style={S.btnO("#A855F7")}>ดูผล</button>
 {!done&&<button onClick={()=>stEval(emp)} style={S.btn(selTeam.color)}>ประเมิน</button>}
-{done&&<button onClick={()=>stEval(emp)} style={S.btnO(selTeam.color)}>ประเมินซ้ำ</button>}
+{done&&<button onClick={()=>{const ev=gEQ(emp.id,curQ,curY);if(ev)stEditEval(emp,ev);}} style={S.btnO(selTeam.color)}>✏️ แก้ไขประเมิน</button>}
 {isAdmin&&<button onClick={()=>setEditEmp({...emp})} style={S.btnO("#5B8DEF")}>✏️</button>}
 {isAdmin&&<button onClick={()=>rmEmp(emp)} style={{background:"none",border:"1.5px solid #EF444440",color:"#EF4444",padding:"8px 12px",borderRadius:10,fontSize:12,fontWeight:600}}>ลบ</button>}
 </div></div>})}
@@ -282,13 +291,14 @@ return<div key={emp._key} className="er" style={{...S.card,display:"flex",alignI
 {/* EVALUATE — uses team-specific categories */}
 {view==="evaluate"&&evalTarget&&(()=>{const cats=getCats(evalTarget.team);return<div style={{animation:"slideUp .3s ease",maxWidth:680}}>
 <button onClick={()=>setView("team")} style={{...S.btnO("#6b7280"),marginBottom:16}}>← กลับ</button>
-<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:44,height:44,borderRadius:12,background:(gT(evalTarget.team)?.color||"#5B8DEF")+"18",color:gT(evalTarget.team)?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,flexShrink:0}}>{evalTarget.name.charAt(0)}</div><div><h2 style={{fontSize:18,fontWeight:700,color:"#f0f0f0",margin:0}}>ประเมิน: {evalTarget.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{evalTarget.role} • {gT(evalTarget.team)?.name} • <strong style={{color:"#5B8DEF"}}>{qL(curQ,curY)}</strong></div></div></div>
-{gEQ(evalTarget.id,curQ,curY)&&<Alert color="#F97316" icon="⚠️">ประเมินแล้วใน {qL(curQ,curY)} การบันทึกจะเพิ่มอีกครั้ง</Alert>}
+<div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:44,height:44,borderRadius:12,background:(gT(evalTarget.team)?.color||"#5B8DEF")+"18",color:gT(evalTarget.team)?.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:700,flexShrink:0}}>{evalTarget.name.charAt(0)}</div><div><h2 style={{fontSize:18,fontWeight:700,color:"#f0f0f0",margin:0}}>{editEvalKey?"แก้ไขประเมิน":"ประเมิน"}: {evalTarget.name}</h2><div style={{fontSize:11,color:"#6b7280"}}>{evalTarget.role} • {gT(evalTarget.team)?.name} • <strong style={{color:"#5B8DEF"}}>{qL(curQ,curY)}</strong></div></div></div>
+{editEvalKey&&<Alert color="#5B8DEF" icon="✏️">กำลังแก้ไขการประเมินที่มีอยู่ คะแนนเดิมแสดงอยู่แล้ว แก้เฉพาะข้อที่ต้องการแล้วกดบันทึก</Alert>}
+{!editEvalKey&&gEQ(evalTarget.id,curQ,curY)&&<Alert color="#F97316" icon="⚠️">ประเมินแล้วใน {qL(curQ,curY)} การบันทึกจะเพิ่มอีกครั้ง</Alert>}
 <div style={{...S.card,display:"flex",gap:10,flexWrap:"wrap",padding:"12px 16px",marginBottom:6}}><span style={{fontSize:10,color:"#6b7280",fontWeight:600}}>เกณฑ์ (เต็ม 10):</span><span style={{fontSize:10,color:"#EF4444",fontWeight:600}}>1-2 ต้องปรับปรุง</span><span style={{fontSize:10,color:"#F97316",fontWeight:600}}>3-4 ต่ำกว่ามาตรฐาน</span><span style={{fontSize:10,color:"#F59E0B",fontWeight:600}}>5-6 ได้มาตรฐาน</span><span style={{fontSize:10,color:"#10B981",fontWeight:600}}>7-8 ดี</span><span style={{fontSize:10,color:"#3B82F6",fontWeight:600}}>9-10 ดีเยี่ยม</span></div>
 {cats.filter(cat=>cat.id!=="leadership"||evalTarget.isLeader).map(cat=><div key={cat.id} style={S.card}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:14}}><span style={{fontSize:16}}>{cat.icon}</span><span style={{fontSize:13,fontWeight:700,color:"#e0e0e0"}}>{cat.name}</span><span style={{fontSize:10,color:"#6b7280"}}>{cat.nameEn}</span></div>
 {(cat.criteria||[]).map(cr=><div key={cr.id} className="sr" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid #1e2028",gap:8}}><div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:600,color:"#c0c4d0"}}>{cr.name}</div><div style={{fontSize:10,color:"#6b7280"}}>{cr.desc}</div></div><ScoreInput value={eS[cr.id]||0} onChange={v=>setES({...eS,[cr.id]:v})}/></div>)}</div>)}
 <div style={S.card}><label style={S.label}>หมายเหตุ</label><textarea value={eN} onChange={e=>setEN(e.target.value)} placeholder="ความคิดเห็น..." style={{...S.input,minHeight:70,resize:"vertical"}}/></div>
-<div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}><button onClick={()=>setView("team")} style={S.btnO("#6b7280")}>ยกเลิก</button><button onClick={subEval} disabled={saving} style={S.btn("#10B981")}>{saving?"กำลังบันทึก...":"✓ บันทึก"}</button></div>
+<div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:6}}><button onClick={()=>{setEditEvalKey(null);setView("team");}} style={S.btnO("#6b7280")}>ยกเลิก</button><button onClick={subEval} disabled={saving} style={S.btn("#10B981")}>{saving?"กำลังบันทึก...":editEvalKey?"✓ บันทึกการแก้ไข":"✓ บันทึก"}</button></div>
 </div>})()}
 
 {/* RESULTS */}
